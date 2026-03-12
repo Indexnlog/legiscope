@@ -37,15 +37,14 @@ export default function DrilldownTab({ signals }: DrilldownTabProps) {
     if (!code) return
     setLoading(true)
     try {
-      const { data } = await supabase
-        .from('bills')
-        .select('bill_id, bill_name, committee, propose_dt, proc_result_cd, regulation_type, ksic_codes')
-        .contains('ksic_codes', [code])
-        .order('propose_dt', { ascending: false })
-        .range(p * 50, (p + 1) * 50 - 1)
+      const { data } = await supabase.rpc('bills_by_ksic3', {
+        p_code: code,
+        p_offset: p * 50,
+        p_limit: 50,
+      })
       if (!data) return
       setBills(prev => p === 0 ? (data as Bill[]) : [...prev, ...(data as Bill[])])
-      setHasMore(data.length === 50)
+      setHasMore((data as Bill[]).length === 50)
     } catch (e) {
       console.error('loadBills error:', e)
     } finally {

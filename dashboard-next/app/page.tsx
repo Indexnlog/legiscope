@@ -13,6 +13,21 @@ const TABS = [
   { id: 'drilldown', label: '③ 산업 드릴다운', icon: '🔍' },
 ]
 
+const TAB_META: Record<string, { desc: string; pdeck: string }> = {
+  process: {
+    desc: '한국 입법 과정의 전체 흐름(발의 → 상임위 심사 → 본회의 가결 → 공포)을 수치로 이해합니다. 42,000+ 법안 기준 단계별 현황, 규제/지원 유형 분포, 주요 용어 해설을 제공합니다.',
+    pdeck: 'Macro > 금융 및 리스크 — 입법 환경 개요',
+  },
+  risk: {
+    desc: 'KSIC 중분류 80개 산업별 규제 위험 지수(risk_score)와 최근 90일 입법 활성도를 비교합니다. 어느 산업에 규제 입법이 집중되는지 한눈에 파악할 수 있습니다.',
+    pdeck: '기업정보 > 산업정보 > Macro/Alt Data (최상단) + Macro > 금융 및 리스크',
+  },
+  drilldown: {
+    desc: '산업(KSIC 중분류)을 선택해 관련 법안 목록, 규제 유형 분포, 연도별 발의 추이를 상세히 확인합니다. 특정 업종의 규제 리스크를 심층 분석할 때 사용합니다.',
+    pdeck: '기업정보 > 산업정보 > Macro/Alt Data — 기업 업종에 맞는 산업 자동 선택 후 연동',
+  },
+}
+
 interface OverallStats {
   bills: number
   committee_reviewed: number
@@ -152,6 +167,13 @@ export default function Dashboard() {
       {/* 콘텐츠 */}
       <main className="px-4 sm:px-6 py-6" style={{ marginTop: -1 }}>
         <div className="rounded-xl rounded-tl-none bg-white" style={{ border: '1px solid #e2e8f0' }}>
+          {/* 탭 설명 배너 */}
+          <div className="px-4 sm:px-6 py-3" style={{ borderBottom: '1px solid #e2e8f0', background: '#f0f9ff' }}>
+            <p className="text-xs text-slate-600 leading-relaxed">{TAB_META[tab].desc}</p>
+            <p className="text-xs mt-1" style={{ color: '#2563eb' }}>
+              <span className="font-medium">📌 pdeck 연동 위치:</span> {TAB_META[tab].pdeck}
+            </p>
+          </div>
           <div className="p-4 sm:p-6">
             {tab === 'process' && stats && <ProcessTab stats={stats} />}
             {tab === 'risk' && <RiskTab signals={signals} />}
