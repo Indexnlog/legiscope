@@ -20,13 +20,25 @@ interface ProcessTabProps {
 
 const STAGE_COLORS = ['#6366f1', '#3b82f6', '#0ea5e9', '#10b981', '#f59e0b']
 
-
 const STAGES = [
   { label: '법률안 발의', key: 'bills', icon: '📝', desc: '의원 또는 정부가 법안을 제출하는 단계' },
-  { label: '상임위 심사', key: 'committee_reviewed', icon: '🔍', desc: '소관 상임위원회에서 법안을 심도 있게 검토' },
+  { label: '상임위 심사', key: 'committee_reviewed', icon: '🔍', desc: '소관 상임위원회에서 심도 있게 검토' },
   { label: '본회의 가결', key: 'passed', icon: '✅', desc: '전체 의원이 참여하는 본회의에서 의결' },
   { label: '공포', key: 'promulgated', icon: '📜', desc: '대통령이 서명하여 법률로 확정' },
   { label: '계류 중', key: 'pending', icon: '⏳', desc: '아직 처리되지 않고 심사 중인 법안' },
+]
+
+// 입법 절차 흐름 — Legiscope 데이터 수집 여부 표시
+const FLOW_STEPS = [
+  { label: '정부·의원\n입법예고', hasData: true, count: '229건', note: '정부입법지원센터' },
+  { label: '법률안\n발의', hasData: true, count: '42,736건', note: '국회 OpenAPI' },
+  { label: '소관\n상임위 접수', hasData: false },
+  { label: '상임위\n법안심사소위', hasData: false },
+  { label: '상임위\n전체회의', hasData: true, count: '11,774건', note: '국회 OpenAPI' },
+  { label: '법제사법\n위원회', hasData: false },
+  { label: '본회의\n심의·의결', hasData: true, count: '4,058건 가결', note: '국회 OpenAPI' },
+  { label: '정부\n이송', hasData: false },
+  { label: '대통령\n공포', hasData: true, count: '6,640건', note: '법제처 DRF' },
 ]
 
 const TERM_GLOSSARY = [
@@ -62,11 +74,11 @@ export default function ProcessTab({ stats }: ProcessTabProps) {
         {STAGES.map((s, i) => (
           <div key={s.key} className="rounded-xl p-4 text-center bg-white" style={{ border: '1px solid #e2e8f0' }}>
             <div className="text-2xl mb-1">{s.icon}</div>
-            <div className="text-xs text-slate-500 mb-1 leading-tight">{s.label}</div>
+            <div className="text-xs text-slate-500 mb-1 leading-tight font-medium">{s.label}</div>
             <div className="text-2xl font-bold" style={{ color: STAGE_COLORS[i] }}>
               {(stats[s.key as keyof typeof stats] ?? 0).toLocaleString()}
             </div>
-            <div className="text-xs text-slate-400 mt-1 leading-tight cursor-help" title={s.desc}>{s.desc.slice(0, 18)}…</div>
+            <div className="text-xs text-slate-400 mt-1 leading-snug">{s.desc}</div>
           </div>
         ))}
       </div>
@@ -94,20 +106,20 @@ export default function ProcessTab({ stats }: ProcessTabProps) {
           </ResponsiveContainer>
         </div>
 
-        {/* 규제 유형 파이 */}
+        {/* 규제 유형 파이 — 라벨 잘림 방지: cy 높이고 outerRadius 줄임 */}
         <div className="rounded-xl p-5 bg-white" style={{ border: '1px solid #e2e8f0' }}>
-          <h3 className="text-sm font-semibold text-slate-700 mb-4">
+          <h3 className="text-sm font-semibold text-slate-700 mb-2">
             🏷️ 규제 유형 분포
             <span className="ml-2 text-xs font-normal text-slate-400">(전체 발의 기준)</span>
           </h3>
-          <ResponsiveContainer width="100%" height={220}>
+          <ResponsiveContainer width="100%" height={260}>
             <PieChart>
               <Pie
                 data={regData}
                 cx="50%"
-                cy="50%"
-                innerRadius={55}
-                outerRadius={90}
+                cy="52%"
+                innerRadius={52}
+                outerRadius={82}
                 paddingAngle={2}
                 dataKey="value"
                 label={({ name, percent }) => `${name} ${(percent * 100).toFixed(1)}%`}
@@ -124,34 +136,56 @@ export default function ProcessTab({ stats }: ProcessTabProps) {
               <Legend wrapperStyle={{ color: '#64748b', fontSize: 12 }} />
             </PieChart>
           </ResponsiveContainer>
-          <p className="text-center text-xs text-slate-400 mt-1">가결률 {passRate}% (발의 대비)</p>
+          <p className="text-center text-xs text-slate-400 -mt-1">가결률 {passRate}% (발의 대비)</p>
         </div>
       </div>
 
-      {/* 입법 절차 흐름도 */}
+      {/* 입법 절차 흐름도 — 데이터 수집 범위 표시 */}
       <div className="rounded-xl p-5 bg-white" style={{ border: '1px solid #e2e8f0' }}>
-        <h3 className="text-sm font-semibold text-slate-700 mb-4">🗺️ 입법 절차 흐름</h3>
-        <div className="flex flex-wrap items-center justify-center gap-2 text-sm">
-          {[
-            '정부·의원 입법예고',
-            '법률안 발의',
-            '소관 상임위 접수',
-            '상임위 법안심사소위',
-            '상임위 전체회의',
-            '법제사법위원회',
-            '본회의 심의·의결',
-            '정부 이송',
-            '대통령 공포',
-          ].map((step, i, arr) => (
-            <span key={i} className="flex items-center gap-2">
-              <span className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                {step}
-              </span>
-              {i < arr.length - 1 && <span className="text-slate-300">→</span>}
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-semibold text-slate-700">🗺️ 입법 절차 흐름</h3>
+          <div className="flex items-center gap-3 text-[11px]">
+            <span className="flex items-center gap-1">
+              <span className="inline-block w-3 h-3 rounded-sm" style={{ background: '#1B2745' }} />
+              Legiscope 수집
             </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block w-3 h-3 rounded-sm bg-gray-100 border border-gray-200" />
+              미수집
+            </span>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-start justify-center gap-1.5">
+          {FLOW_STEPS.map((step, i) => (
+            <div key={i} className="flex items-center gap-1.5">
+              <div className="flex flex-col items-center">
+                <span
+                  className="px-2.5 py-2 rounded-lg text-xs font-medium text-center leading-snug whitespace-pre-line"
+                  style={step.hasData
+                    ? { background: '#1B2745', color: '#ffffff', minWidth: 68 }
+                    : { background: '#f8fafc', color: '#94a3b8', border: '1px solid #e2e8f0', minWidth: 68 }
+                  }
+                >
+                  {step.label}
+                </span>
+                {step.hasData && step.count && (
+                  <span className="text-[10px] mt-1 font-semibold" style={{ color: '#2563eb' }}>
+                    {step.count}
+                  </span>
+                )}
+                {step.hasData && step.note && (
+                  <span className="text-[9px] text-gray-400 mt-0.5">{step.note}</span>
+                )}
+              </div>
+              {i < FLOW_STEPS.length - 1 && (
+                <span className="text-slate-300 text-xs mt-2">→</span>
+              )}
+            </div>
           ))}
         </div>
-        <p className="text-xs text-slate-400 mt-3 text-center">
+
+        <p className="text-xs text-slate-400 mt-4 text-center">
           * 평균 발의→가결 소요기간: 약 250~350일 / 상당수 법안은 임기 만료 시 자동 폐기
         </p>
       </div>
