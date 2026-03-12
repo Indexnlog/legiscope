@@ -51,7 +51,6 @@ export default function Dashboard() {
   }
 
   async function loadStats() {
-    // 전체 집계는 RPC 또는 직접 쿼리 — bills 테이블에서 count 집계
     const { data: allBills } = await supabase
       .from('bills')
       .select('proc_result_cd, committee_result, regulation_type')
@@ -73,7 +72,6 @@ export default function Dashboard() {
       else neutral++
     }
 
-    // promulgations count
     const { count: promulgated } = await supabase
       .from('promulgations')
       .select('*', { count: 'exact', head: true })
@@ -92,41 +90,41 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-4">
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4" style={{ background: '#f8fafc' }}>
         <div className="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-        <p className="text-slate-400 text-sm">Supabase에서 데이터를 불러오는 중…</p>
+        <p className="text-slate-500 text-sm">데이터를 불러오는 중…</p>
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="rounded-xl p-6 text-center" style={{ background: '#1e293b', border: '1px solid #334155' }}>
-          <p className="text-red-400 font-semibold mb-2">데이터 로드 실패</p>
-          <p className="text-slate-400 text-xs">{error}</p>
+      <div className="min-h-screen flex items-center justify-center" style={{ background: '#f8fafc' }}>
+        <div className="rounded-xl p-6 text-center bg-white" style={{ border: '1px solid #e2e8f0' }}>
+          <p className="text-red-500 font-semibold mb-2">데이터 로드 실패</p>
+          <p className="text-slate-500 text-xs">{error}</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen" style={{ background: '#0f172a' }}>
+    <div className="min-h-screen" style={{ background: '#f8fafc' }}>
       {/* 헤더 */}
-      <header className="sticky top-0 z-10 px-6 py-4 flex items-center justify-between" style={{ background: 'rgba(15,23,42,0.9)', backdropFilter: 'blur(12px)', borderBottom: '1px solid #1e293b' }}>
+      <header className="sticky top-0 z-10 px-6 py-4 flex items-center justify-between bg-white" style={{ backdropFilter: 'blur(12px)', borderBottom: '1px solid #e2e8f0' }}>
         <div className="flex items-center gap-3">
           <span className="text-xl font-bold tracking-tight">
-            <span style={{ color: '#3b82f6' }}>Legis</span>
-            <span className="text-slate-200">cope</span>
+            <span style={{ color: '#2563eb' }}>Legis</span>
+            <span className="text-slate-800">cope</span>
           </span>
-          <span className="hidden sm:inline text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: '#1e3a8a', color: '#93c5fd' }}>
+          <span className="hidden sm:inline text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: '#dbeafe', color: '#1d4ed8' }}>
             입법 리스크 대시보드
           </span>
         </div>
         <div className="flex items-center gap-4 text-xs text-slate-500">
           {stats && (
             <>
-              <span><span className="text-slate-300 font-medium">{stats.bills.toLocaleString()}</span>건 분석</span>
+              <span><span className="text-slate-700 font-medium">{stats.bills.toLocaleString()}</span>건 분석</span>
               <span>|</span>
             </>
           )}
@@ -142,10 +140,10 @@ export default function Dashboard() {
             onClick={() => setTab(t.id)}
             className="flex-shrink-0 px-4 py-2 rounded-t-lg text-sm font-medium transition-colors"
             style={{
-              background: tab === t.id ? '#1e293b' : 'transparent',
-              color: tab === t.id ? '#f1f5f9' : '#64748b',
-              border: tab === t.id ? '1px solid #334155' : '1px solid transparent',
-              borderBottom: tab === t.id ? '1px solid #1e293b' : '1px solid transparent',
+              background: tab === t.id ? '#ffffff' : 'transparent',
+              color: tab === t.id ? '#0f172a' : '#94a3b8',
+              border: tab === t.id ? '1px solid #e2e8f0' : '1px solid transparent',
+              borderBottom: tab === t.id ? '1px solid #ffffff' : '1px solid transparent',
             }}
           >
             <span className="mr-1.5">{t.icon}</span>{t.label}
@@ -155,7 +153,7 @@ export default function Dashboard() {
 
       {/* 콘텐츠 */}
       <main className="px-4 sm:px-6 py-6" style={{ marginTop: -1 }}>
-        <div className="rounded-xl rounded-tl-none p-0 sm:p-0" style={{ border: '1px solid #334155', background: '#1e293b', padding: 0 }}>
+        <div className="rounded-xl rounded-tl-none bg-white" style={{ border: '1px solid #e2e8f0' }}>
           <div className="p-4 sm:p-6">
             {tab === 'process' && stats && <ProcessTab stats={stats} />}
             {tab === 'risk' && <RiskTab signals={signals} />}
@@ -165,7 +163,7 @@ export default function Dashboard() {
       </main>
 
       {/* 푸터 */}
-      <footer className="px-6 py-4 text-center text-xs text-slate-600">
+      <footer className="px-6 py-4 text-center text-xs text-slate-400">
         데이터 출처: 국회 OpenAPI · 법제처 DRF · 정부입법지원센터 · korea.kr &nbsp;|&nbsp; Legiscope © 2026
       </footer>
     </div>

@@ -19,7 +19,7 @@ interface ProcessTabProps {
 }
 
 const STAGE_COLORS = ['#6366f1', '#3b82f6', '#0ea5e9', '#10b981', '#f59e0b']
-const REG_COLORS = ['#ef4444', '#22c55e', '#64748b']
+
 
 const STAGES = [
   { label: '법률안 발의', key: 'bills', icon: '📝', desc: '의원 또는 정부가 법안을 제출하는 단계' },
@@ -50,7 +50,7 @@ export default function ProcessTab({ stats }: ProcessTabProps) {
   const regData = [
     { name: '규제', value: stats.regulation, color: '#ef4444' },
     { name: '지원', value: stats.support, color: '#22c55e' },
-    { name: '중립', value: stats.neutral, color: '#64748b' },
+    { name: '중립', value: stats.neutral, color: '#94a3b8' },
   ]
 
   const passRate = stats.bills > 0 ? ((stats.passed / stats.bills) * 100).toFixed(1) : '0'
@@ -60,29 +60,29 @@ export default function ProcessTab({ stats }: ProcessTabProps) {
       {/* 핵심 수치 카드 */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         {STAGES.map((s, i) => (
-          <div key={s.key} className="rounded-xl p-4 text-center" style={{ background: '#1e293b', border: '1px solid #334155' }}>
+          <div key={s.key} className="rounded-xl p-4 text-center bg-white" style={{ border: '1px solid #e2e8f0' }}>
             <div className="text-2xl mb-1">{s.icon}</div>
-            <div className="text-xs text-slate-400 mb-1 leading-tight">{s.label}</div>
+            <div className="text-xs text-slate-500 mb-1 leading-tight">{s.label}</div>
             <div className="text-2xl font-bold" style={{ color: STAGE_COLORS[i] }}>
               {(stats[s.key as keyof typeof stats] ?? 0).toLocaleString()}
             </div>
-            <div className="text-xs text-slate-500 mt-1 leading-tight">{s.desc.slice(0, 18)}…</div>
+            <div className="text-xs text-slate-400 mt-1 leading-tight">{s.desc.slice(0, 18)}…</div>
           </div>
         ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* 단계별 법안 수 막대 */}
-        <div className="rounded-xl p-5" style={{ background: '#1e293b', border: '1px solid #334155' }}>
-          <h3 className="text-sm font-semibold text-slate-300 mb-4">📊 입법 단계별 법안 수</h3>
+        <div className="rounded-xl p-5 bg-white" style={{ border: '1px solid #e2e8f0' }}>
+          <h3 className="text-sm font-semibold text-slate-700 mb-4">📊 입법 단계별 법안 수</h3>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={funnelData} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
               <XAxis type="number" tick={{ fill: '#94a3b8', fontSize: 11 }} tickFormatter={v => v.toLocaleString()} />
-              <YAxis type="category" dataKey="name" tick={{ fill: '#94a3b8', fontSize: 12 }} width={70} />
+              <YAxis type="category" dataKey="name" tick={{ fill: '#64748b', fontSize: 12 }} width={70} />
               <Tooltip
-                contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 8 }}
-                labelStyle={{ color: '#f1f5f9' }}
+                contentStyle={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 8 }}
+                labelStyle={{ color: '#0f172a' }}
                 formatter={(v: number) => [v.toLocaleString() + '건', '']}
               />
               <Bar dataKey="value" radius={[0, 4, 4, 0]}>
@@ -95,10 +95,10 @@ export default function ProcessTab({ stats }: ProcessTabProps) {
         </div>
 
         {/* 규제 유형 파이 */}
-        <div className="rounded-xl p-5" style={{ background: '#1e293b', border: '1px solid #334155' }}>
-          <h3 className="text-sm font-semibold text-slate-300 mb-4">
+        <div className="rounded-xl p-5 bg-white" style={{ border: '1px solid #e2e8f0' }}>
+          <h3 className="text-sm font-semibold text-slate-700 mb-4">
             🏷️ 규제 유형 분포
-            <span className="ml-2 text-xs font-normal text-slate-500">(전체 발의 기준)</span>
+            <span className="ml-2 text-xs font-normal text-slate-400">(전체 발의 기준)</span>
           </h3>
           <ResponsiveContainer width="100%" height={220}>
             <PieChart>
@@ -111,26 +111,26 @@ export default function ProcessTab({ stats }: ProcessTabProps) {
                 paddingAngle={2}
                 dataKey="value"
                 label={({ name, percent }) => `${name} ${(percent * 100).toFixed(1)}%`}
-                labelLine={{ stroke: '#475569' }}
+                labelLine={{ stroke: '#cbd5e1' }}
               >
                 {regData.map((d, i) => (
                   <Cell key={i} fill={d.color} />
                 ))}
               </Pie>
               <Tooltip
-                contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 8 }}
+                contentStyle={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 8 }}
                 formatter={(v: number) => [v.toLocaleString() + '건', '']}
               />
-              <Legend wrapperStyle={{ color: '#94a3b8', fontSize: 12 }} />
+              <Legend wrapperStyle={{ color: '#64748b', fontSize: 12 }} />
             </PieChart>
           </ResponsiveContainer>
-          <p className="text-center text-xs text-slate-500 mt-1">가결률 {passRate}% (발의 대비)</p>
+          <p className="text-center text-xs text-slate-400 mt-1">가결률 {passRate}% (발의 대비)</p>
         </div>
       </div>
 
       {/* 입법 절차 흐름도 */}
-      <div className="rounded-xl p-5" style={{ background: '#1e293b', border: '1px solid #334155' }}>
-        <h3 className="text-sm font-semibold text-slate-300 mb-4">🗺️ 입법 절차 흐름</h3>
+      <div className="rounded-xl p-5 bg-white" style={{ border: '1px solid #e2e8f0' }}>
+        <h3 className="text-sm font-semibold text-slate-700 mb-4">🗺️ 입법 절차 흐름</h3>
         <div className="flex flex-wrap items-center justify-center gap-2 text-sm">
           {[
             '정부·의원 입법예고',
@@ -144,26 +144,26 @@ export default function ProcessTab({ stats }: ProcessTabProps) {
             '대통령 공포',
           ].map((step, i, arr) => (
             <span key={i} className="flex items-center gap-2">
-              <span className="px-3 py-1.5 rounded-lg text-xs font-medium" style={{ background: '#0f172a', border: '1px solid #475569', color: '#cbd5e1' }}>
+              <span className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
                 {step}
               </span>
-              {i < arr.length - 1 && <span className="text-slate-600">→</span>}
+              {i < arr.length - 1 && <span className="text-slate-300">→</span>}
             </span>
           ))}
         </div>
-        <p className="text-xs text-slate-500 mt-3 text-center">
+        <p className="text-xs text-slate-400 mt-3 text-center">
           * 평균 발의→가결 소요기간: 약 250~350일 / 상당수 법안은 임기 만료 시 자동 폐기
         </p>
       </div>
 
       {/* 용어 사전 */}
-      <div className="rounded-xl p-5" style={{ background: '#1e293b', border: '1px solid #334155' }}>
-        <h3 className="text-sm font-semibold text-slate-300 mb-4">📖 주요 용어 설명</h3>
+      <div className="rounded-xl p-5 bg-white" style={{ border: '1px solid #e2e8f0' }}>
+        <h3 className="text-sm font-semibold text-slate-700 mb-4">📖 주요 용어 설명</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {TERM_GLOSSARY.map((item) => (
-            <div key={item.term} className="rounded-lg p-3" style={{ background: '#0f172a' }}>
-              <span className="text-blue-400 font-semibold text-sm">{item.term}</span>
-              <p className="text-xs text-slate-400 mt-1 leading-relaxed">{item.def}</p>
+            <div key={item.term} className="rounded-lg p-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+              <span className="text-blue-600 font-semibold text-sm">{item.term}</span>
+              <p className="text-xs text-slate-500 mt-1 leading-relaxed">{item.def}</p>
             </div>
           ))}
         </div>
