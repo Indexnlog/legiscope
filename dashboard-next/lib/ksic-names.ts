@@ -243,7 +243,8 @@ export const KSIC_NAMES: Record<string, string> = {
   '990': '국제 및 외국기관',
 }
 
-export function getKsicName(code: string): string {
+export function getKsicName(code: string | null | undefined): string {
+  if (!code) return ''
   // 3자리로 정규화
   const key = code.slice(0, 3)
   return KSIC_NAMES[key] ?? code

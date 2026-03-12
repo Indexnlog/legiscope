@@ -15,9 +15,11 @@ const CustomTooltip = ({ active, payload }: any) => {
   if (!active || !payload?.length) return null
   const d = payload[0]?.payload
   if (!d) return null
+  // bar data stores { name, value, code }; full signal has ksic_code
+  const code = d.ksic_code ?? d.code ?? ''
   return (
     <div className="rounded-lg p-3 text-xs bg-white" style={{ border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
-      <p className="font-semibold text-slate-700 mb-1">{getKsicName(d.ksic_code)} ({d.ksic_code})</p>
+      <p className="font-semibold text-slate-700 mb-1">{getKsicName(code)} ({code})</p>
       <p className="text-slate-500">발의: {d.total_bills?.toLocaleString()}건</p>
       <p className="text-slate-500">규제법안: {d.reg_count}건 ({d.reg_ratio?.toFixed(1)}%)</p>
       <p className="text-slate-500">최근 90일: {d.recent_90d_bills}건</p>
