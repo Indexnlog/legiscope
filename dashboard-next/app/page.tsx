@@ -51,40 +51,38 @@ export default function Dashboard() {
   }
 
   async function loadStats() {
-    const { data: allBills } = await supabase
-      .from('bills')
-      .select('proc_result_cd, committee_result, regulation_type')
+    const PASSED = ['원안가결', '수정가결']
+    const PROCESSED = ['원안가결', '수정가결', '폐기', '부결', '대안반영폐기', '수정안반영폐기', '철회']
 
-    if (!allBills) return
-
-    const PASS = new Set(['원안가결', '수정가결'])
-    const PROCESSED = new Set(['원안가결', '수정가결', '폐기', '부결', '대안반영폐기', '수정안반영폐기', '철회'])
-
-    let committee_reviewed = 0, passed = 0, pending = 0
-    let regulation = 0, support = 0, neutral = 0
-
-    for (const b of allBills) {
-      if (b.committee_result) committee_reviewed++
-      if (PASS.has(b.proc_result_cd)) passed++
-      if (!PROCESSED.has(b.proc_result_cd ?? '')) pending++
-      if (b.regulation_type === '규제') regulation++
-      else if (b.regulation_type === '지원') support++
-      else neutral++
-    }
-
-    const { count: promulgated } = await supabase
-      .from('promulgations')
-      .select('*', { count: 'exact', head: true })
+    const [
+      { count: bills },
+      { count: passed },
+      { count: committee_reviewed },
+      { count: regulation },
+      { count: support },
+      { count: neutral },
+      { count: promulgated },
+      { count: processedCount },
+    ] = await Promise.all([
+      supabase.from('bills').select('*', { count: 'exact', head: true }),
+      supabase.from('bills').select('*', { count: 'exact', head: true }).in('proc_result_cd', PASSED),
+      supabase.from('bills').select('*', { count: 'exact', head: true }).not('committee_result', 'is', null),
+      supabase.from('bills').select('*', { count: 'exact', head: true }).eq('regulation_type', '규제'),
+      supabase.from('bills').select('*', { count: 'exact', head: true }).eq('regulation_type', '지원'),
+      supabase.from('bills').select('*', { count: 'exact', head: true }).eq('regulation_type', '중립'),
+      supabase.from('promulgations').select('*', { count: 'exact', head: true }),
+      supabase.from('bills').select('*', { count: 'exact', head: true }).in('proc_result_cd', PROCESSED),
+    ])
 
     setStats({
-      bills: allBills.length,
-      committee_reviewed,
-      passed,
+      bills: bills ?? 0,
+      passed: passed ?? 0,
+      committee_reviewed: committee_reviewed ?? 0,
+      regulation: regulation ?? 0,
+      support: support ?? 0,
+      neutral: neutral ?? 0,
       promulgated: promulgated ?? 0,
-      pending,
-      regulation,
-      support,
-      neutral,
+      pending: (bills ?? 0) - (processedCount ?? 0),
     })
   }
 
