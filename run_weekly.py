@@ -6,7 +6,7 @@ Windows 작업 스케줄러 등록 방법:
   1. 시작 → 작업 스케줄러 검색 → 실행
   2. 작업 만들기
      - 이름: LegiscopeWeekly
-     - 트리거: 매주 월요일 오전 7:00
+     - 트리거: 매주 금요일 오전 7:00
      - 동작: 프로그램/스크립트 → python
              인수: C:/Users/ekapr/legiscope/run_weekly.py
              시작 위치: C:/Users/ekapr/legiscope
@@ -37,7 +37,7 @@ STEPS = [
     ("공포법령 규제분류", ["python", "-m", "mapper.regulation_type", "--apply-promulgations"]),
     ("산업별 지표",   ["python", "-m", "processors.industry_signals"]),
     ("CSV 내보내기",  ["python", "export_csv.py"]),
-    ("주간 기사 브리프", ["python", "article_weekly.py"]),
+    ("주간 기사 브리프", ["python", "article_weekly.py", "--slack", "--draft"]),
 ]
 
 

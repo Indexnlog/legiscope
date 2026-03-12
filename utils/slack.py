@@ -71,13 +71,13 @@ def send_article_draft(title: str, draft: str, date_str: str) -> bool:
     """기사 초안 슬랙 전송 (Claude API 생성 시)"""
     notifier = SlackNotifier()
 
-    # 슬랙 메시지 길이 제한
-    preview = draft[:800] + "\n...(전체 초안은 Obsidian 참조)" if len(draft) > 800 else draft
+    # 슬랙 메시지 최대 길이 3000자 (Slack API 제한)
+    body = draft[:3000] if len(draft) > 3000 else draft
 
     text = (
-        f"📰 *입법 레이더 기사 초안 생성* ({date_str})\n"
+        f"📰 *입법 레이더 기사 초안* ({date_str})\n"
         f"*{title}*\n\n"
-        f"```{preview}```"
+        f"```{body}```"
     )
     return notifier.send(text)
 
