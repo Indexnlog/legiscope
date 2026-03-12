@@ -68,7 +68,15 @@ export default function Dashboard() {
       .select('*')
       .eq('as_of_date', latestDate ?? '')
     if (error) throw error
-    setSignals(data ?? [])
+    // DB에 중복 row가 있을 수 있음 → (ksic_code, ksic_level) 기준 dedup, total_bills 최대값 우선
+    const raw = data ?? []
+    const deduped = new Map<string, typeof raw[0]>()
+    for (const s of raw) {
+      const key = `${s.ksic_code}_${s.ksic_level}`
+      const prev = deduped.get(key)
+      if (!prev || (s.total_bills ?? 0) > (prev.total_bills ?? 0)) deduped.set(key, s)
+    }
+    setSignals(Array.from(deduped.values()))
     if (latestDate) setAsOf(latestDate)
   }
 

@@ -20,44 +20,43 @@ function getRiskBadge(score: number, max: number) {
   return { label: 'Low', bg: '#f0fdf4', text: '#15803d' }
 }
 
-function pct(arr: number[], p: number) {
-  const sorted = [...arr].sort((a, b) => a - b)
-  return sorted[Math.min(Math.floor(sorted.length * p / 100), sorted.length - 1)] ?? 0
-}
+// log1p 스케일 변환 (0 포함 데이터에 안전)
+const toLog = (v: number) => Math.log1p(v)
+const fromLog = (v: number) => Math.expm1(v)
 
 const ScatterTooltip = ({ active, payload }: any) => {
   if (!active || !payload?.length) return null
   const d = payload[0]?.payload
   if (!d) return null
   return (
-    <div className="rounded-lg p-3 text-xs bg-white border border-gray-200 shadow-md">
-      <p className="font-bold mb-1" style={{ color: '#1B2745' }}>
-        {getKsicName(d.ksic_code)} ({d.ksic_code})
+    <div className="rounded-lg p-3 text-xs bg-white border border-gray-200 shadow-md min-w-[160px]">
+      <p className="font-bold mb-1.5" style={{ color: '#1B2745' }}>
+        {getKsicName(d.code)} ({d.code})
       </p>
-      <p className="text-gray-500">risk_score: <span className="font-semibold text-red-500">{d.x?.toFixed(2)}</span></p>
-      <p className="text-gray-500">최근 90일: {d.y}건</p>
+      <p className="text-gray-500">risk_score: <span className="font-semibold text-red-500">{d.riskRaw?.toFixed(2)}</span></p>
+      <p className="text-gray-500">최근 90일: <span className="font-semibold">{d.recentRaw}건</span></p>
       <p className="text-gray-500">총 발의: {d.z?.toLocaleString()}건</p>
     </div>
   )
 }
 
-function DangerDot(props: any) {
-  const { cx, cy, payload, thX, thY } = props
+// 위험 구역 상위 N개만 레이블 표시
+function ScatterDot(props: any) {
+  const { cx, cy, payload, labelSet } = props
   if (cx == null || cy == null) return null
-  const isDanger = (payload.x ?? 0) >= thX && (payload.y ?? 0) >= thY
-  const name = getKsicName(payload.ksic_code)
-  const label = name ? name.slice(0, 7) : payload.ksic_code
+  const showLabel = labelSet?.has(payload.code)
+  const isDanger = payload.danger
   return (
     <g>
       <circle
         cx={cx} cy={cy}
         r={isDanger ? 5 : 3}
         fill={isDanger ? '#f04452' : '#3182f6'}
-        fillOpacity={isDanger ? 0.85 : 0.45}
+        fillOpacity={isDanger ? 0.85 : 0.4}
       />
-      {isDanger && label && (
-        <text x={cx + 7} y={cy + 4} fontSize={9} fill="#374151" style={{ pointerEvents: 'none' }}>
-          {label}
+      {showLabel && (
+        <text x={cx + 7} y={cy + 4} fontSize={9} fill="#1B2745" fontWeight="500" style={{ pointerEvents: 'none' }}>
+          {getKsicName(payload.code).slice(0, 8)}
         </text>
       )}
     </g>
@@ -76,32 +75,36 @@ export default function RiskTab({ signals, asOf }: RiskTabProps) {
   const maxRisk = Math.max(...l2.map(s => s.risk_score ?? 0), 0.01)
   const maxRecent = Math.max(...l2.map(s => s.recent_90d_bills ?? 0), 1)
 
-  // 이상치 제외: 95th percentile 기준으로 scatter 표시 범위 제한
-  const riskVals = l2.map(s => s.risk_score ?? 0)
-  const recentVals = l2.map(s => s.recent_90d_bills ?? 0)
-  const capRisk = pct(riskVals, 95)
-  const capRecent = pct(recentVals, 95)
-  const outliers = l2.filter(s => (s.risk_score ?? 0) > capRisk || (s.recent_90d_bills ?? 0) > capRecent)
+  // log 변환된 산점도 데이터
+  const scatterData = l2.map(s => ({
+    x: toLog(s.risk_score ?? 0),
+    y: toLog(s.recent_90d_bills ?? 0),
+    z: s.total_bills ?? 0,
+    riskRaw: s.risk_score ?? 0,
+    recentRaw: s.recent_90d_bills ?? 0,
+    code: s.ksic_code,
+    danger: false, // 아래에서 설정
+  }))
 
-  // 산점도 데이터 (이상치 제외)
-  const scatterData = l2
-    .filter(s => (s.risk_score ?? 0) <= capRisk && (s.recent_90d_bills ?? 0) <= capRecent)
-    .map(s => ({
-      x: s.risk_score ?? 0,
-      y: s.recent_90d_bills ?? 0,
-      z: s.total_bills ?? 0,
-      ksic_code: s.ksic_code,
-    }))
+  // log 공간의 중앙값
+  const xs = scatterData.map(d => d.x).sort((a, b) => a - b)
+  const ys = scatterData.map(d => d.y).sort((a, b) => a - b)
+  const medX = xs[Math.floor(xs.length / 2)] ?? 0
+  const medY = ys[Math.floor(ys.length / 2)] ?? 0
 
-  // 4분면 기준: scatter 내 중앙값
-  const sRisk = scatterData.map(d => d.x).sort((a, b) => a - b)
-  const sRecent = scatterData.map(d => d.y).sort((a, b) => a - b)
-  const medRisk = sRisk[Math.floor(sRisk.length / 2)] ?? 0
-  const medRecent = sRecent[Math.floor(sRecent.length / 2)] ?? 0
+  // 위험 구역 = log 공간 우상단
+  const dangerItems = scatterData.filter(d => d.x >= medX && d.y >= medY)
+  dangerItems.forEach(d => { d.danger = true })
 
-  const dangerCount = l2.filter(s => (s.risk_score ?? 0) >= medRisk && (s.recent_90d_bills ?? 0) >= medRecent).length
+  // 레이블: 위험 구역 내 상위 5개 (log x+y 합산 기준)
+  const labelSet = new Set(
+    [...dangerItems]
+      .sort((a, b) => (b.x + b.y) - (a.x + a.y))
+      .slice(0, 5)
+      .map(d => d.code)
+  )
 
-  // 워치리스트: 위험도 × 최근활성도 종합
+  // 워치리스트
   const watchList = [...l2]
     .sort((a, b) => {
       const ua = (a.risk_score ?? 0) / maxRisk * 0.55 + (a.recent_90d_bills ?? 0) / maxRecent * 0.45
@@ -111,6 +114,10 @@ export default function RiskTab({ signals, asOf }: RiskTabProps) {
 
   const displayList = showAll ? watchList.slice(0, 15) : watchList.slice(0, 4)
   const topRecentIndustry = [...l2].sort((a, b) => (b.recent_90d_bills ?? 0) - (a.recent_90d_bills ?? 0))[0]
+
+  // X/Y 축 log 틱 표시값
+  const xTickFormatter = (v: number) => fromLog(v).toFixed(1)
+  const yTickFormatter = (v: number) => Math.round(fromLog(v)).toString()
 
   return (
     <div className="space-y-5">
@@ -136,7 +143,7 @@ export default function RiskTab({ signals, asOf }: RiskTabProps) {
         {[
           { label: '분석 산업 수', value: l2.length + '개', color: '#3182f6' },
           { label: '최고 risk_score', value: maxRisk.toFixed(2), color: '#f04452' },
-          { label: '주목 산업', value: dangerCount + '개', color: '#f59e0b', sub: '위험高 + 활성高' },
+          { label: '주목 산업', value: dangerItems.length + '개', color: '#f59e0b', sub: '위험高 + 활성高' },
           {
             label: '최근 90일 최다',
             value: (topRecentIndustry?.recent_90d_bills ?? 0) + '건',
@@ -147,7 +154,7 @@ export default function RiskTab({ signals, asOf }: RiskTabProps) {
           <div key={c.label} className="rounded-xl p-4 text-center bg-white border border-gray-200 shadow-sm">
             <div className="text-[11px] text-gray-500 mb-1">{c.label}</div>
             <div className="text-xl font-bold" style={{ color: c.color }}>{c.value}</div>
-            {c.sub && <div className="text-[10px] text-gray-400 mt-0.5">{c.sub}</div>}
+            {c.sub && <div className="text-[10px] text-gray-400 mt-0.5 truncate">{c.sub}</div>}
           </div>
         ))}
       </div>
@@ -192,7 +199,7 @@ export default function RiskTab({ signals, asOf }: RiskTabProps) {
                     </td>
                     <td className="px-3 py-2.5 whitespace-nowrap">
                       <div className="flex items-center gap-2">
-                        <span className="font-semibold text-red-500 w-8 text-right">{(s.risk_score ?? 0).toFixed(2)}</span>
+                        <span className="font-semibold text-red-500 w-10 text-right">{(s.risk_score ?? 0).toFixed(2)}</span>
                         <div className="w-14 h-1.5 bg-gray-100 rounded-full">
                           <div className="h-1.5 rounded-full" style={{ width: `${riskPct}%`, background: '#f04452' }} />
                         </div>
@@ -200,7 +207,7 @@ export default function RiskTab({ signals, asOf }: RiskTabProps) {
                     </td>
                     <td className="px-3 py-2.5 whitespace-nowrap">
                       <div className="flex items-center gap-2">
-                        <span className="text-gray-700 w-8 text-right">{s.recent_90d_bills ?? 0}</span>
+                        <span className="text-gray-700 w-10 text-right">{s.recent_90d_bills ?? 0}</span>
                         <div className="w-14 h-1.5 bg-gray-100 rounded-full">
                           <div className="h-1.5 rounded-full" style={{ width: `${recentPct}%`, background: '#3182f6' }} />
                         </div>
@@ -227,57 +234,49 @@ export default function RiskTab({ signals, asOf }: RiskTabProps) {
         </div>
       </div>
 
-      {/* 4분면 리스크 매트릭스 */}
+      {/* 4분면 리스크 매트릭스 — log scale */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="px-5 pt-5 pb-1">
           <h3 className="text-[15px] font-bold tracking-tight" style={{ color: '#1B2745' }}>리스크 매트릭스</h3>
           <p className="text-[11px] text-gray-400 mt-0.5">
-            오른쪽 위 붉은 구역 = 규제위험 높고 최근 입법도 활발한 산업
+            오른쪽 위 붉은 구역 = 규제위험 높고 최근 입법도 활발한 산업 · 점선 = 중앙값 · 로그 스케일
           </p>
         </div>
         <div className="px-5 pb-2 pt-2">
-          {outliers.length > 0 && (
-            <div className="mb-2 px-3 py-2 rounded-lg text-[11px] text-amber-700" style={{ background: '#fefce8', border: '1px solid #fde68a' }}>
-              <span className="font-medium">⚠ 이상치 제외 ({outliers.length}개): </span>
-              {outliers.slice(0, 3).map(o => (
-                <span key={o.ksic_code} className="mr-2">
-                  {getKsicName(o.ksic_code)} (risk {(o.risk_score ?? 0).toFixed(1)} / 최근 {o.recent_90d_bills}건)
-                </span>
-              ))}
-              {outliers.length > 3 && <span className="text-amber-500">외 {outliers.length - 3}개</span>}
-            </div>
-          )}
           <div className="flex flex-wrap gap-x-4 gap-y-1 mb-2 text-[10px] text-gray-500">
             <span><span className="inline-block w-2.5 h-2.5 rounded-sm mr-1 align-middle" style={{ background: '#fee2e2' }} />주목 필요 구역</span>
-            <span>● 붉은 점 = 주목 산업 &nbsp;○ 파란 점 = 기타 산업 &nbsp;점선 = 중앙값</span>
+            <span>● 붉은 점 = 주목 산업 (상위 5개 이름 표시)</span>
+            <span>○ 파란 점 = 기타 산업</span>
           </div>
           <ResponsiveContainer width="100%" height={360}>
-            <ScatterChart margin={{ top: 10, right: 70, bottom: 30, left: 10 }}>
+            <ScatterChart margin={{ top: 10, right: 80, bottom: 30, left: 10 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <ReferenceArea x1={medRisk} y1={medRecent} fill="#fee2e2" fillOpacity={0.3} />
+              <ReferenceArea x1={medX} y1={medY} fill="#fee2e2" fillOpacity={0.3} />
               <XAxis
                 type="number" dataKey="x" name="risk_score"
                 tick={{ fill: '#9ca3af', fontSize: 11 }}
+                tickFormatter={xTickFormatter}
                 label={{ value: 'risk_score →', fill: '#9ca3af', fontSize: 10, position: 'insideBottomRight', offset: -5 }}
               />
               <YAxis
                 type="number" dataKey="y" name="최근90일"
                 tick={{ fill: '#9ca3af', fontSize: 11 }}
+                tickFormatter={yTickFormatter}
                 label={{ value: '최근 90일 →', fill: '#9ca3af', fontSize: 10, angle: -90, position: 'insideTopLeft', offset: 5 }}
               />
-              <ZAxis type="number" dataKey="z" range={[30, 300]} />
+              <ZAxis type="number" dataKey="z" range={[30, 250]} />
               <Tooltip content={<ScatterTooltip />} />
-              <ReferenceLine x={medRisk} stroke="#cbd5e1" strokeDasharray="4 3" />
-              <ReferenceLine y={medRecent} stroke="#cbd5e1" strokeDasharray="4 3" />
+              <ReferenceLine x={medX} stroke="#cbd5e1" strokeDasharray="4 3" />
+              <ReferenceLine y={medY} stroke="#cbd5e1" strokeDasharray="4 3" />
               <Scatter
                 data={scatterData}
-                shape={(props: any) => <DangerDot {...props} thX={medRisk} thY={medRecent} />}
+                shape={(props: any) => <ScatterDot {...props} labelSet={labelSet} />}
               />
             </ScatterChart>
           </ResponsiveContainer>
         </div>
         <div className="px-5 pb-3 text-right">
-          <span className="text-[11px] text-gray-400">* source: Legiscope, 국회 OpenAPI · 95th percentile 기준 이상치 별도 표기</span>
+          <span className="text-[11px] text-gray-400">* source: Legiscope, 국회 OpenAPI · 축: log(1+값) 변환 적용</span>
         </div>
       </div>
 
