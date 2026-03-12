@@ -1,30 +1,22 @@
 'use client'
 
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  ScatterChart, Scatter, ZAxis, Label,
+  ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, ReferenceLine, ZAxis, ReferenceArea,
 } from 'recharts'
 import type { IndustrySignal } from '@/lib/types'
 import { getKsicName } from '@/lib/ksic-names'
 
 interface RiskTabProps {
   signals: IndustrySignal[]
+  asOf?: string
 }
 
-const CustomTooltip = ({ active, payload }: any) => {
-  if (!active || !payload?.length) return null
-  const d = payload[0]?.payload
-  if (!d) return null
-  const code = d.ksic_code ?? d.code ?? ''
-  return (
-    <div className="rounded-lg p-3 text-xs bg-white border border-gray-200 shadow-md">
-      <p className="font-bold mb-1" style={{ color: '#1B2745' }}>{getKsicName(code)} ({code})</p>
-      <p className="text-gray-500">발의: {d.total_bills?.toLocaleString()}건</p>
-      <p className="text-gray-500">규제법안: {d.reg_count}건 ({d.reg_ratio?.toFixed(1)}%)</p>
-      <p className="text-gray-500">최근 90일: {d.recent_90d_bills}건</p>
-      <p className="font-semibold" style={{ color: '#f04452' }}>risk_score: {d.risk_score?.toFixed(2)}</p>
-    </div>
-  )
+function getRiskBadge(score: number, max: number) {
+  const pct = max > 0 ? score / max : 0
+  if (pct > 0.5) return { label: 'High', bg: '#fee2e2', text: '#dc2626' }
+  if (pct > 0.2) return { label: 'Mid', bg: '#fef9c3', text: '#b45309' }
+  return { label: 'Low', bg: '#f0fdf4', text: '#15803d' }
 }
 
 const ScatterTooltip = ({ active, payload }: any) => {
@@ -33,126 +25,227 @@ const ScatterTooltip = ({ active, payload }: any) => {
   if (!d) return null
   return (
     <div className="rounded-lg p-3 text-xs bg-white border border-gray-200 shadow-md">
-      <p className="font-bold" style={{ color: '#1B2745' }}>{getKsicName(d.ksic_code)} ({d.ksic_code})</p>
-      <p className="text-gray-500">risk_score: {d.x?.toFixed(2)}</p>
+      <p className="font-bold mb-1" style={{ color: '#1B2745' }}>
+        {getKsicName(d.ksic_code)} ({d.ksic_code})
+      </p>
+      <p className="text-gray-500">risk_score: <span className="font-semibold text-red-500">{d.x?.toFixed(2)}</span></p>
       <p className="text-gray-500">최근 90일: {d.y}건</p>
       <p className="text-gray-500">총 발의: {d.z?.toLocaleString()}건</p>
     </div>
   )
 }
 
-export default function RiskTab({ signals }: RiskTabProps) {
-  const l2 = signals.filter(s => s.ksic_level === 3)
+function DangerDot(props: any) {
+  const { cx, cy, payload, thX, thY } = props
+  if (cx == null || cy == null) return null
+  const isDanger = (payload.x ?? 0) >= thX && (payload.y ?? 0) >= thY
+  const name = getKsicName(payload.ksic_code)
+  const label = name ? name.slice(0, 7) : payload.ksic_code
+  return (
+    <g>
+      <circle
+        cx={cx} cy={cy}
+        r={isDanger ? 5 : 3}
+        fill={isDanger ? '#f04452' : '#3182f6'}
+        fillOpacity={isDanger ? 0.85 : 0.45}
+      />
+      {isDanger && label && (
+        <text x={cx + 7} y={cy + 4} fontSize={9} fill="#374151" style={{ pointerEvents: 'none' }}>
+          {label}
+        </text>
+      )}
+    </g>
+  )
+}
+
+export default function RiskTab({ signals, asOf }: RiskTabProps) {
+  const l2 = signals.filter(s => s.ksic_level === 3 && (s.total_bills ?? 0) > 0)
 
   if (l2.length === 0) {
     return <div className="text-center text-gray-400 py-12">데이터가 없습니다.</div>
   }
 
-  const topRisk = [...l2].sort((a, b) => b.risk_score - a.risk_score).slice(0, 20)
-  const topRecent = [...l2].sort((a, b) => b.recent_90d_bills - a.recent_90d_bills).slice(0, 20)
-  const scatterData = l2
-    .filter(s => s.risk_score > 0 || s.recent_90d_bills > 0)
-    .map(s => ({ x: s.risk_score, y: s.recent_90d_bills, z: s.total_bills, ksic_code: s.ksic_code }))
+  const maxRisk = Math.max(...l2.map(s => s.risk_score ?? 0), 0.01)
+  const maxRecent = Math.max(...l2.map(s => s.recent_90d_bills ?? 0), 1)
 
-  const makeBarData = (arr: IndustrySignal[], valueKey: keyof IndustrySignal) =>
-    arr.map(s => ({
-      name: getKsicName(s.ksic_code).slice(0, 12),
-      value: (s[valueKey] as number) ?? 0,
-      code: s.ksic_code,
-    }))
+  // 4분면 기준: 중앙값
+  const sortedR = [...l2].map(s => s.risk_score ?? 0).sort((a, b) => a - b)
+  const sortedN = [...l2].map(s => s.recent_90d_bills ?? 0).sort((a, b) => a - b)
+  const medRisk = sortedR[Math.floor(sortedR.length / 2)] ?? 0
+  const medRecent = sortedN[Math.floor(sortedN.length / 2)] ?? 0
 
-  const maxRisk = Math.max(...l2.map(s => s.risk_score ?? 0), 0)
-  const maxRecent = Math.max(...l2.map(s => s.recent_90d_bills ?? 0), 0)
+  const dangerCount = l2.filter(s => (s.risk_score ?? 0) >= medRisk && (s.recent_90d_bills ?? 0) >= medRecent).length
+
+  const scatterData = l2.map(s => ({
+    x: s.risk_score ?? 0,
+    y: s.recent_90d_bills ?? 0,
+    z: s.total_bills ?? 0,
+    ksic_code: s.ksic_code,
+  }))
+
+  // 위험도 × 최근활성도 종합 순위
+  const watchList = [...l2]
+    .sort((a, b) => {
+      const ua = (a.risk_score ?? 0) / maxRisk * 0.55 + (a.recent_90d_bills ?? 0) / maxRecent * 0.45
+      const ub = (b.risk_score ?? 0) / maxRisk * 0.55 + (b.recent_90d_bills ?? 0) / maxRecent * 0.45
+      return ub - ua
+    })
+    .slice(0, 15)
+
+  const topRecentIndustry = [...l2].sort((a, b) => (b.recent_90d_bills ?? 0) - (a.recent_90d_bills ?? 0))[0]
 
   return (
-    <div className="space-y-6">
-      {/* 요약 카드 */}
+    <div className="space-y-5">
+
+      {/* 위젯 헤더 */}
+      <div className="rounded-xl px-5 py-4" style={{ background: '#1B2745' }}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-[15px] font-bold text-white tracking-tight">산업별 입법 리스크</h2>
+            <p className="text-[11px] mt-1" style={{ color: '#93c5fd' }}>
+              KSIC 중분류 {l2.length}개 산업 기준 · 규제법안 누적 위험도 × 최근 입법 활성도
+            </p>
+          </div>
+          <div className="text-right shrink-0">
+            <span className="text-[10px] text-blue-300">Legiscope</span>
+            {asOf && <p className="text-[10px] text-blue-400 mt-0.5">기준일 {asOf.slice(0, 10)}</p>}
+          </div>
+        </div>
+      </div>
+
+      {/* KPI 카드 */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
           { label: '분석 산업 수', value: l2.length + '개', color: '#3182f6' },
           { label: '최고 risk_score', value: maxRisk.toFixed(2), color: '#f04452' },
-          { label: '최근 90일 최다 발의', value: maxRecent + '건', color: '#f59e0b' },
-          { label: '규제법안 있는 산업', value: l2.filter(s => s.reg_count > 0).length + '개', color: '#a855f7' },
-        ].map(card => (
-          <div key={card.label} className="rounded-xl p-4 text-center bg-white border border-gray-200 shadow-sm">
-            <div className="text-xs text-gray-500 mb-1">{card.label}</div>
-            <div className="text-2xl font-bold" style={{ color: card.color }}>{card.value}</div>
+          { label: '주목 산업', value: dangerCount + '개', color: '#f59e0b', sub: '위험高 + 활성高' },
+          {
+            label: '최근 90일 최다',
+            value: (topRecentIndustry?.recent_90d_bills ?? 0) + '건',
+            color: '#a855f7',
+            sub: getKsicName(topRecentIndustry?.ksic_code).slice(0, 9),
+          },
+        ].map(c => (
+          <div key={c.label} className="rounded-xl p-4 text-center bg-white border border-gray-200 shadow-sm">
+            <div className="text-[11px] text-gray-500 mb-1">{c.label}</div>
+            <div className="text-xl font-bold" style={{ color: c.color }}>{c.value}</div>
+            {c.sub && <div className="text-[10px] text-gray-400 mt-0.5">{c.sub}</div>}
           </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        {/* risk_score TOP 20 */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-          <div className="px-5 pt-5 pb-1">
-            <h3 className="text-[15px] font-bold tracking-tight" style={{ color: '#1B2745' }}>규제 위험 TOP 20</h3>
-            <p className="text-[11px] text-gray-400 mt-0.5">risk_score = 규제법안수 × 규제법안가결률 / 100</p>
-          </div>
-          <div className="px-5 pb-5 pt-3">
-            <ResponsiveContainer width="100%" height={360}>
-              <BarChart data={makeBarData(topRisk, 'risk_score')} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis type="number" tick={{ fill: '#9ca3af', fontSize: 11 }} />
-                <YAxis type="category" dataKey="name" tick={{ fill: '#374151', fontSize: 10 }} width={100} />
-                <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="value" fill="#f04452" radius={[0, 4, 4, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="px-5 pb-3 text-right">
-            <span className="text-[11px] text-gray-400">* source: Legiscope, 국회 OpenAPI</span>
-          </div>
-        </div>
-
-        {/* 최근 90일 TOP 20 */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-          <div className="px-5 pt-5 pb-1">
-            <h3 className="text-[15px] font-bold tracking-tight" style={{ color: '#1B2745' }}>최근 90일 입법 활성 TOP 20</h3>
-            <p className="text-[11px] text-gray-400 mt-0.5">최근 3개월간 발의된 법안 수 기준</p>
-          </div>
-          <div className="px-5 pb-5 pt-3">
-            <ResponsiveContainer width="100%" height={360}>
-              <BarChart data={makeBarData(topRecent, 'recent_90d_bills')} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis type="number" tick={{ fill: '#9ca3af', fontSize: 11 }} />
-                <YAxis type="category" dataKey="name" tick={{ fill: '#374151', fontSize: 10 }} width={100} />
-                <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="value" fill="#3182f6" radius={[0, 4, 4, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="px-5 pb-3 text-right">
-            <span className="text-[11px] text-gray-400">* source: Legiscope, 국회 OpenAPI</span>
-          </div>
-        </div>
-      </div>
-
-      {/* 산점도 */}
+      {/* 4분면 리스크 매트릭스 */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="px-5 pt-5 pb-1">
-          <h3 className="text-[15px] font-bold tracking-tight" style={{ color: '#1B2745' }}>규제 위험 vs 입법 활성도</h3>
-          <p className="text-[11px] text-gray-400 mt-0.5">오른쪽 위 → 규제 강도 높고 최근 발의도 많은 산업 (주목 필요)</p>
+          <h3 className="text-[15px] font-bold tracking-tight" style={{ color: '#1B2745' }}>리스크 매트릭스</h3>
+          <p className="text-[11px] text-gray-400 mt-0.5">
+            오른쪽 위 붉은 구역 = 누적 규제위험 높고 최근 입법도 활발한 산업 · 즉각 모니터링 필요
+          </p>
         </div>
-        <div className="px-5 pb-5 pt-3">
-          <ResponsiveContainer width="100%" height={360}>
-            <ScatterChart>
+        <div className="px-5 pb-2 pt-2">
+          <div className="flex flex-wrap gap-x-4 gap-y-1 mb-2 text-[10px] text-gray-500">
+            <span><span className="inline-block w-2.5 h-2.5 rounded-sm mr-1 align-middle" style={{ background: '#fee2e2' }} />주목 필요 구역</span>
+            <span>● 붉은 점 = 주목 산업 (이름 표시) &nbsp;○ 파란 점 = 기타 산업</span>
+            <span>점선 = 중앙값 기준</span>
+          </div>
+          <ResponsiveContainer width="100%" height={380}>
+            <ScatterChart margin={{ top: 10, right: 70, bottom: 30, left: 10 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis type="number" dataKey="x" name="risk_score" tick={{ fill: '#9ca3af', fontSize: 11 }}>
-                <Label value="risk_score →" fill="#9ca3af" fontSize={11} position="insideBottomRight" offset={-10} />
-              </XAxis>
-              <YAxis type="number" dataKey="y" name="최근90일" tick={{ fill: '#9ca3af', fontSize: 11 }}>
-                <Label value="최근90일 발의" fill="#9ca3af" fontSize={11} angle={-90} position="insideTopLeft" />
-              </YAxis>
-              <ZAxis type="number" dataKey="z" range={[40, 400]} />
+              <ReferenceArea x1={medRisk} y1={medRecent} fill="#fee2e2" fillOpacity={0.25} />
+              <XAxis
+                type="number" dataKey="x" name="risk_score"
+                tick={{ fill: '#9ca3af', fontSize: 11 }}
+                label={{ value: 'risk_score →', fill: '#9ca3af', fontSize: 10, position: 'insideBottomRight', offset: -5 }}
+              />
+              <YAxis
+                type="number" dataKey="y" name="최근90일"
+                tick={{ fill: '#9ca3af', fontSize: 11 }}
+                label={{ value: '최근 90일 발의 →', fill: '#9ca3af', fontSize: 10, angle: -90, position: 'insideTopLeft', offset: 5 }}
+              />
+              <ZAxis type="number" dataKey="z" range={[30, 300]} />
               <Tooltip content={<ScatterTooltip />} />
-              <Scatter data={scatterData} fill="#3182f6" fillOpacity={0.6} />
+              <ReferenceLine x={medRisk} stroke="#cbd5e1" strokeDasharray="4 3" />
+              <ReferenceLine y={medRecent} stroke="#cbd5e1" strokeDasharray="4 3" />
+              <Scatter
+                data={scatterData}
+                shape={(props: any) => <DangerDot {...props} thX={medRisk} thY={medRecent} />}
+              />
             </ScatterChart>
           </ResponsiveContainer>
         </div>
         <div className="px-5 pb-3 text-right">
-          <span className="text-[11px] text-gray-400">* source: Legiscope, 국회 OpenAPI · 기준일: 최신 스냅샷</span>
+          <span className="text-[11px] text-gray-400">* source: Legiscope, 국회 OpenAPI</span>
         </div>
       </div>
+
+      {/* 워치리스트 테이블 */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-3" style={{ background: '#1B2745' }}>
+          <div>
+            <h3 className="text-sm font-semibold text-white">규제 리스크 워치리스트</h3>
+            <p className="text-[10px] mt-0.5" style={{ color: '#93c5fd' }}>위험도 × 최근활성도 종합 점수 기준 상위 15개 산업</p>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-gray-200" style={{ background: '#f9fafb' }}>
+                {['순위', '산업명 (KSIC)', '위험등급', 'risk_score', '최근 90일', '가결률'].map(h => (
+                  <th key={h} className="px-3 py-2.5 text-left text-gray-500 font-medium whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {watchList.map((s, i) => {
+                const badge = getRiskBadge(s.risk_score ?? 0, maxRisk)
+                const riskPct = Math.min(((s.risk_score ?? 0) / maxRisk * 100), 100).toFixed(0)
+                const recentPct = Math.min(((s.recent_90d_bills ?? 0) / maxRecent * 100), 100).toFixed(0)
+                return (
+                  <tr
+                    key={s.ksic_code}
+                    className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                    style={{ background: i % 2 === 0 ? '#ffffff' : '#fafafa' }}
+                  >
+                    <td className="px-3 py-2.5 text-gray-400 font-medium w-10">#{i + 1}</td>
+                    <td className="px-3 py-2.5">
+                      <span className="font-medium text-gray-800">{getKsicName(s.ksic_code)}</span>
+                      <span className="ml-1.5 text-gray-400 font-mono text-[10px]">{s.ksic_code}</span>
+                    </td>
+                    <td className="px-3 py-2.5 whitespace-nowrap">
+                      <span className="px-2 py-0.5 rounded text-[11px] font-semibold" style={{ background: badge.bg, color: badge.text }}>
+                        {badge.label}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 whitespace-nowrap">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-red-500 w-8 text-right">{(s.risk_score ?? 0).toFixed(2)}</span>
+                        <div className="w-14 h-1.5 bg-gray-100 rounded-full">
+                          <div className="h-1.5 rounded-full" style={{ width: `${riskPct}%`, background: '#f04452' }} />
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2.5 whitespace-nowrap">
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-700 w-8 text-right">{s.recent_90d_bills ?? 0}</span>
+                        <div className="w-14 h-1.5 bg-gray-100 rounded-full">
+                          <div className="h-1.5 rounded-full" style={{ width: `${recentPct}%`, background: '#3182f6' }} />
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2.5 whitespace-nowrap text-gray-600">
+                      {(s.pass_rate ?? 0).toFixed(1)}%
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div className="px-5 py-2.5 text-right border-t border-gray-100">
+          <span className="text-[11px] text-gray-400">* source: Legiscope, 국회 OpenAPI · risk_score = 규제법안수 × 규제가결률 / 100</span>
+        </div>
+      </div>
+
     </div>
   )
 }

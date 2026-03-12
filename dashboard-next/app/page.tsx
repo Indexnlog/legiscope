@@ -181,7 +181,7 @@ export default function Dashboard() {
           </div>
           <div className="p-4 sm:p-6">
             {tab === 'process' && stats && <ProcessTab stats={stats} />}
-            {tab === 'risk' && <RiskTab signals={signals} />}
+            {tab === 'risk' && <RiskTab signals={signals} asOf={asOf} />}
             {tab === 'drilldown' && <DrilldownTab signals={signals} />}
           </div>
         </div>
