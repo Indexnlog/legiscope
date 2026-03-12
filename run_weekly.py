@@ -37,6 +37,7 @@ STEPS = [
     ("공포법령 규제분류", ["python", "-m", "mapper.regulation_type", "--apply-promulgations"]),
     ("산업별 지표",   ["python", "-m", "processors.industry_signals"]),
     ("CSV 내보내기",  ["python", "export_csv.py"]),
+    ("주간 기사 브리프", ["python", "article_weekly.py"]),
 ]
 
 
