@@ -2,10 +2,13 @@
 입법 레이더 주간 트리거 감지 + 월간 리포트 생성기
 실행: PYTHONPATH=. python article_weekly.py
      PYTHONPATH=. python article_weekly.py --monthly
+     PYTHONPATH=. python article_weekly.py --slack        (Slack 전송 포함)
+     PYTHONPATH=. python article_weekly.py --draft        (Claude API 초안 생성)
 """
 import csv
 import sys
 import argparse
+import io
 from datetime import date, timedelta
 from collections import defaultdict
 from db.client import get_client
@@ -327,18 +330,135 @@ def print_monthly_report(bills):
             print(f"     - {b['bill_name'][:52]} ({b['proc_dt']})")
 
 
+def generate_draft_claude(trigger_summary: str, trigger_type: str) -> str:
+    """Claude API로 기사 초안 생성"""
+    import os
+    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    if not api_key or api_key.startswith("여기에"):
+        return "[ANTHROPIC_API_KEY 미설정 — .env에 키 추가 필요]"
+
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key)
+
+        prompt = f"""당신은 경제 전문 기자입니다. 아래 국회 입법 데이터 분석 결과를 바탕으로 경제지 기사 초안을 작성해주세요.
+
+트리거 유형: {trigger_type}
+데이터 분석 결과:
+{trigger_summary}
+
+요구사항:
+- 경제지 독자(기업인, 투자자) 대상
+- 제목 1개 + 부제 1개
+- 본문 400~600자
+- 실제 법안명 인용
+- 기업 대응 방향으로 마무리
+- 말미에 "본 기사는 Legiscope 입법 모니터링 플랫폼 데이터를 기반으로 작성됐습니다." 포함
+- 한국어로 작성"""
+
+        msg = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=1024,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return msg.content[0].text
+    except Exception as e:
+        return f"[Claude API 오류: {e}]"
+
+
+def save_to_obsidian(title: str, content: str) -> str:
+    """기사 초안을 Obsidian 작업일지 폴더에 저장"""
+    import os
+    obsidian_dir = (
+        r"C:\Users\ekapr\Dropbox\앱\remotely-save\Second_Brain"
+        r"\10_Professional\11_Projects\2026 Legiscope\입법 레이더 기사"
+    )
+    os.makedirs(obsidian_dir, exist_ok=True)
+    filename = f"{TODAY} {title[:20].replace('/', '-')}.md"
+    path = os.path.join(obsidian_dir, filename)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(f"---\ntags: [legiscope, 입법레이더, 기사, 자동생성]\ndate: {TODAY}\nstatus: 초안(AI)\n---\n\n")
+        f.write(content)
+    print(f"✅ Obsidian 저장: {filename}")
+    return path
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--monthly", action="store_true", help="월간 리포트 모드")
+    parser.add_argument("--slack",   action="store_true", help="Slack 전송 포함")
+    parser.add_argument("--draft",   action="store_true", help="Claude API 기사 초안 생성")
     args = parser.parse_args()
 
     bills = load_bills()
 
     if args.monthly:
+        # 월간 모드: 출력 캡처 후 Slack 전송
+        buf = io.StringIO()
+        sys.stdout = buf
         print_monthly_report(bills)
+        sys.stdout = sys.__stdout__
+        report_text = buf.getvalue()
+        print(report_text)
+
+        if args.slack:
+            from utils.slack import send_monthly_report
+            send_monthly_report(report_text, str(TODAY))
     else:
+        # 주간 모드: 출력 캡처 후 Slack 전송 + 초안 생성
+        buf = io.StringIO()
+        sys.stdout = buf
         print_weekly_brief(bills)
+        sys.stdout = sys.__stdout__
+        brief_text = buf.getvalue()
+        print(brief_text)
+
+        # 트리거 감지 여부 확인
+        passed  = trigger_reg_passed(bills)
+        clusters = trigger_cluster(bills)
+        intl    = trigger_intl(bills)
+        moved   = trigger_pending_moved(bills)
+        has_triggers = any([passed, clusters, intl, moved])
+
+        if args.slack:
+            from utils.slack import send_weekly_brief
+            send_weekly_brief(has_triggers, brief_text, str(TODAY))
+
+        if args.draft and has_triggers:
+            # 가장 강한 트리거 선택해서 초안 생성
+            if passed:
+                trigger_type = "규제 법안 가결"
+                key_data = "\n".join([f"- {b['bill_name']} ({b['proc_result_cd']}, {b['proc_dt']})" for b in passed[:3]])
+            elif clusters:
+                trigger_type = "동일 이슈 집중 발의"
+                first_key, first_group = list(clusters.items())[0]
+                ind = industry_name(first_group[0]["ksic_code"])
+                key_data = f"[{ind}] '{first_key}…' 관련 법안 {len(first_group)}건 집중 발의\n"
+                key_data += "\n".join([f"- {b['bill_name']} ({b['propose_dt']})" for b in first_group[:5]])
+            elif intl:
+                trigger_type = "국제 규제 연동 법안"
+                key_data = "\n".join([f"- {b['bill_name']} [참조: {ref}]" for b, ref in intl[:3]])
+            else:
+                trigger_type = "계류 규제법안 심사 진전"
+                key_data = "\n".join([f"- {b['bill_name']} ({b.get('committee_result','')})" for b in moved[:3]])
+
+            print(f"\n📝 Claude API로 기사 초안 생성 중... ({trigger_type})")
+            draft = generate_draft_claude(key_data, trigger_type)
+            print("\n" + "=" * 65)
+            print(draft)
+            print("=" * 65)
+
+            # Obsidian 저장
+            save_to_obsidian(trigger_type, draft)
+
+            # Slack으로 초안 전송
+            if args.slack:
+                from utils.slack import send_article_draft
+                send_article_draft(trigger_type, draft, str(TODAY))
+
         print(f"\n💡 월간 리포트: python article_weekly.py --monthly")
+        print(f"💡 Slack 전송: python article_weekly.py --slack")
+        print(f"💡 기사 초안:  python article_weekly.py --slack --draft")
 
 
 if __name__ == "__main__":
