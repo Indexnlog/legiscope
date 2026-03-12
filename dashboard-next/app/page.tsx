@@ -6,31 +6,25 @@ import type { IndustrySignal } from '@/lib/types'
 import ProcessTab from '@/components/ProcessTab'
 import RiskTab from '@/components/RiskTab'
 import DrilldownTab from '@/components/DrilldownTab'
-import CompanyTab from '@/components/CompanyTab'
 
 const TABS = [
   { id: 'process', label: '① 입법 프로세스 이해', icon: '📚' },
   { id: 'risk', label: '② 산업별 리스크 현황', icon: '📊' },
   { id: 'drilldown', label: '③ 산업 드릴다운', icon: '🔍' },
-  { id: 'company', label: '④ 기업 조회', icon: '🏢' },
 ]
 
-const TAB_META: Record<string, { desc: string; pdeck: string }> = {
+interface TabMeta { desc: string; pdeck?: string }
+const TAB_META: Record<string, TabMeta> = {
   process: {
     desc: '한국 입법 과정의 전체 흐름(발의 → 상임위 심사 → 본회의 가결 → 공포)을 수치로 이해합니다. 42,000+ 법안 기준 단계별 현황, 규제/지원 유형 분포, 주요 용어 해설을 제공합니다.',
-    pdeck: 'Macro > 금융 및 리스크 — 입법 환경 개요',
   },
   risk: {
     desc: 'KSIC 중분류 80개 산업별 규제 위험 지수(risk_score)와 최근 90일 입법 활성도를 비교합니다. 어느 산업에 규제 입법이 집중되는지 한눈에 파악할 수 있습니다.',
-    pdeck: '기업정보 > 산업정보 > Macro/Alt Data (최상단) + Macro > 금융 및 리스크',
+    pdeck: 'Macro > 금융 및 리스크',
   },
   drilldown: {
     desc: '산업(KSIC 중분류)을 선택해 관련 법안 목록, 규제 유형 분포, 연도별 발의 추이를 상세히 확인합니다. 특정 업종의 규제 리스크를 심층 분석할 때 사용합니다.',
-    pdeck: '기업정보 > 산업정보 > Macro/Alt Data — 기업 업종에 맞는 산업 자동 선택 후 연동',
-  },
-  company: {
-    desc: '기업명과 KSIC 코드를 입력하면 해당 기업 업종의 규제 리스크·관련 법안을 즉시 조회합니다. pdeck에서 기업 페이지 진입 시 KSIC 코드를 자동으로 넘겨받아 표시하는 뷰입니다.',
-    pdeck: '기업정보 > 산업정보 > Macro/Alt Data — 기업 KSIC 코드 자동 주입',
+    pdeck: '기업정보 > 산업정보 > Macro/Alt Data 최상단',
   },
 }
 
@@ -109,7 +103,7 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-4" style={{ background: '#f8fafc' }}>
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4" style={{ background: '#F4F6F8' }}>
         <div className="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
         <p className="text-slate-500 text-sm">데이터를 불러오는 중…</p>
       </div>
@@ -118,8 +112,8 @@ export default function Dashboard() {
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: '#f8fafc' }}>
-        <div className="rounded-xl p-6 text-center bg-white" style={{ border: '1px solid #e2e8f0' }}>
+      <div className="min-h-screen flex items-center justify-center" style={{ background: '#F4F6F8' }}>
+        <div className="rounded-xl p-6 text-center bg-white shadow-sm border border-gray-200">
           <p className="text-red-500 font-semibold mb-2">데이터 로드 실패</p>
           <p className="text-slate-500 text-xs">{error}</p>
         </div>
@@ -127,14 +121,15 @@ export default function Dashboard() {
     )
   }
 
+  const meta = TAB_META[tab]
+
   return (
-    <div className="min-h-screen" style={{ background: '#f8fafc' }}>
+    <div className="min-h-screen" style={{ background: '#F4F6F8' }}>
       {/* 헤더 */}
-      <header className="sticky top-0 z-10 px-6 py-4 flex items-center justify-between bg-white" style={{ backdropFilter: 'blur(12px)', borderBottom: '1px solid #e2e8f0' }}>
+      <header className="sticky top-0 z-10 px-6 py-4 flex items-center justify-between bg-white border-b border-gray-200 shadow-sm">
         <div className="flex items-center gap-3">
-          <span className="text-xl font-bold tracking-tight">
-            <span style={{ color: '#2563eb' }}>Legis</span>
-            <span className="text-slate-800">cope</span>
+          <span className="text-xl font-bold tracking-tight" style={{ color: '#1B2745' }}>
+            Legis<span style={{ color: '#2563eb' }}>cope</span>
           </span>
           <span className="hidden sm:inline text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: '#dbeafe', color: '#1d4ed8' }}>
             입법 리스크 대시보드
@@ -143,7 +138,7 @@ export default function Dashboard() {
         <div className="flex items-center gap-4 text-xs text-slate-500">
           {stats && (
             <>
-              <span><span className="text-slate-700 font-medium">{stats.bills.toLocaleString()}</span>건 분석</span>
+              <span><span className="font-medium" style={{ color: '#1B2745' }}>{stats.bills.toLocaleString()}</span>건 분석</span>
               <span>|</span>
             </>
           )}
@@ -160,7 +155,7 @@ export default function Dashboard() {
             className="flex-shrink-0 px-4 py-2 rounded-t-lg text-sm font-medium transition-colors"
             style={{
               background: tab === t.id ? '#ffffff' : 'transparent',
-              color: tab === t.id ? '#0f172a' : '#94a3b8',
+              color: tab === t.id ? '#1B2745' : '#94a3b8',
               border: tab === t.id ? '1px solid #e2e8f0' : '1px solid transparent',
               borderBottom: tab === t.id ? '1px solid #ffffff' : '1px solid transparent',
             }}
@@ -172,25 +167,28 @@ export default function Dashboard() {
 
       {/* 콘텐츠 */}
       <main className="px-4 sm:px-6 py-6" style={{ marginTop: -1 }}>
-        <div className="rounded-xl rounded-tl-none bg-white" style={{ border: '1px solid #e2e8f0' }}>
+        <div className="rounded-xl rounded-tl-none bg-white border border-gray-200 shadow-sm">
           {/* 탭 설명 배너 */}
-          <div className="px-4 sm:px-6 py-3" style={{ borderBottom: '1px solid #e2e8f0', background: '#f0f9ff' }}>
-            <p className="text-xs text-slate-600 leading-relaxed">{TAB_META[tab].desc}</p>
-            <p className="text-xs mt-1" style={{ color: '#2563eb' }}>
-              <span className="font-medium">📌 pdeck 연동 위치:</span> {TAB_META[tab].pdeck}
-            </p>
+          <div className="px-4 sm:px-6 py-3 border-b border-gray-200" style={{ background: '#f0f9ff' }}>
+            <p className="text-xs text-slate-600 leading-relaxed">{meta.desc}</p>
+            {meta.pdeck ? (
+              <p className="text-xs mt-1" style={{ color: '#2563eb' }}>
+                <span className="font-medium">📌 pdeck 연동 위치:</span> {meta.pdeck}
+              </p>
+            ) : (
+              <p className="text-xs mt-1 text-slate-400">내부 팀 이해용 — pdeck 직접 연동 없음</p>
+            )}
           </div>
           <div className="p-4 sm:p-6">
             {tab === 'process' && stats && <ProcessTab stats={stats} />}
             {tab === 'risk' && <RiskTab signals={signals} />}
             {tab === 'drilldown' && <DrilldownTab signals={signals} />}
-            {tab === 'company' && <CompanyTab signals={signals} />}
           </div>
         </div>
       </main>
 
       {/* 푸터 */}
-      <footer className="px-6 py-4 text-center text-xs text-slate-400">
+      <footer className="px-6 py-4 text-center text-xs text-gray-400">
         데이터 출처: 국회 OpenAPI · 법제처 DRF · 정부입법지원센터 · korea.kr &nbsp;|&nbsp; Legiscope © 2026
       </footer>
     </div>

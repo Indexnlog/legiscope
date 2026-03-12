@@ -66,7 +66,7 @@ export default function ProcessTab({ stats }: ProcessTabProps) {
             <div className="text-2xl font-bold" style={{ color: STAGE_COLORS[i] }}>
               {(stats[s.key as keyof typeof stats] ?? 0).toLocaleString()}
             </div>
-            <div className="text-xs text-slate-400 mt-1 leading-tight">{s.desc.slice(0, 18)}…</div>
+            <div className="text-xs text-slate-400 mt-1 leading-tight cursor-help" title={s.desc}>{s.desc.slice(0, 18)}…</div>
           </div>
         ))}
       </div>
