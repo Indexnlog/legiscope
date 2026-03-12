@@ -371,7 +371,7 @@ def save_to_obsidian(title: str, content: str) -> str:
     import os
     obsidian_dir = (
         r"C:\Users\ekapr\Dropbox\앱\remotely-save\Second_Brain"
-        r"\10_Professional\11_Projects\2026 Legiscope\입법 레이더 기사"
+        r"\20_Projects_Builder\21_News_Epoch\2026 입법레이더-Legiscope\01_기사초안"
     )
     os.makedirs(obsidian_dir, exist_ok=True)
     filename = f"{TODAY} {title[:20].replace('/', '-')}.md"
