@@ -4,6 +4,7 @@ import {
   ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine, ZAxis, ReferenceArea,
 } from 'recharts'
+import { useState } from 'react'
 import type { IndustrySignal } from '@/lib/types'
 import { getKsicName } from '@/lib/ksic-names'
 
@@ -17,6 +18,11 @@ function getRiskBadge(score: number, max: number) {
   if (pct > 0.5) return { label: 'High', bg: '#fee2e2', text: '#dc2626' }
   if (pct > 0.2) return { label: 'Mid', bg: '#fef9c3', text: '#b45309' }
   return { label: 'Low', bg: '#f0fdf4', text: '#15803d' }
+}
+
+function pct(arr: number[], p: number) {
+  const sorted = [...arr].sort((a, b) => a - b)
+  return sorted[Math.min(Math.floor(sorted.length * p / 100), sorted.length - 1)] ?? 0
 }
 
 const ScatterTooltip = ({ active, payload }: any) => {
@@ -59,6 +65,8 @@ function DangerDot(props: any) {
 }
 
 export default function RiskTab({ signals, asOf }: RiskTabProps) {
+  const [showAll, setShowAll] = useState(false)
+
   const l2 = signals.filter(s => s.ksic_level === 3 && (s.total_bills ?? 0) > 0)
 
   if (l2.length === 0) {
@@ -68,30 +76,40 @@ export default function RiskTab({ signals, asOf }: RiskTabProps) {
   const maxRisk = Math.max(...l2.map(s => s.risk_score ?? 0), 0.01)
   const maxRecent = Math.max(...l2.map(s => s.recent_90d_bills ?? 0), 1)
 
-  // 4분면 기준: 중앙값
-  const sortedR = [...l2].map(s => s.risk_score ?? 0).sort((a, b) => a - b)
-  const sortedN = [...l2].map(s => s.recent_90d_bills ?? 0).sort((a, b) => a - b)
-  const medRisk = sortedR[Math.floor(sortedR.length / 2)] ?? 0
-  const medRecent = sortedN[Math.floor(sortedN.length / 2)] ?? 0
+  // 이상치 제외: 95th percentile 기준으로 scatter 표시 범위 제한
+  const riskVals = l2.map(s => s.risk_score ?? 0)
+  const recentVals = l2.map(s => s.recent_90d_bills ?? 0)
+  const capRisk = pct(riskVals, 95)
+  const capRecent = pct(recentVals, 95)
+  const outliers = l2.filter(s => (s.risk_score ?? 0) > capRisk || (s.recent_90d_bills ?? 0) > capRecent)
+
+  // 산점도 데이터 (이상치 제외)
+  const scatterData = l2
+    .filter(s => (s.risk_score ?? 0) <= capRisk && (s.recent_90d_bills ?? 0) <= capRecent)
+    .map(s => ({
+      x: s.risk_score ?? 0,
+      y: s.recent_90d_bills ?? 0,
+      z: s.total_bills ?? 0,
+      ksic_code: s.ksic_code,
+    }))
+
+  // 4분면 기준: scatter 내 중앙값
+  const sRisk = scatterData.map(d => d.x).sort((a, b) => a - b)
+  const sRecent = scatterData.map(d => d.y).sort((a, b) => a - b)
+  const medRisk = sRisk[Math.floor(sRisk.length / 2)] ?? 0
+  const medRecent = sRecent[Math.floor(sRecent.length / 2)] ?? 0
 
   const dangerCount = l2.filter(s => (s.risk_score ?? 0) >= medRisk && (s.recent_90d_bills ?? 0) >= medRecent).length
 
-  const scatterData = l2.map(s => ({
-    x: s.risk_score ?? 0,
-    y: s.recent_90d_bills ?? 0,
-    z: s.total_bills ?? 0,
-    ksic_code: s.ksic_code,
-  }))
-
-  // 위험도 × 최근활성도 종합 순위
+  // 워치리스트: 위험도 × 최근활성도 종합
   const watchList = [...l2]
     .sort((a, b) => {
       const ua = (a.risk_score ?? 0) / maxRisk * 0.55 + (a.recent_90d_bills ?? 0) / maxRecent * 0.45
       const ub = (b.risk_score ?? 0) / maxRisk * 0.55 + (b.recent_90d_bills ?? 0) / maxRecent * 0.45
       return ub - ua
     })
-    .slice(0, 15)
 
+  const displayList = showAll ? watchList.slice(0, 15) : watchList.slice(0, 4)
   const topRecentIndustry = [...l2].sort((a, b) => (b.recent_90d_bills ?? 0) - (a.recent_90d_bills ?? 0))[0]
 
   return (
@@ -134,56 +152,12 @@ export default function RiskTab({ signals, asOf }: RiskTabProps) {
         ))}
       </div>
 
-      {/* 4분면 리스크 매트릭스 */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        <div className="px-5 pt-5 pb-1">
-          <h3 className="text-[15px] font-bold tracking-tight" style={{ color: '#1B2745' }}>리스크 매트릭스</h3>
-          <p className="text-[11px] text-gray-400 mt-0.5">
-            오른쪽 위 붉은 구역 = 누적 규제위험 높고 최근 입법도 활발한 산업 · 즉각 모니터링 필요
-          </p>
-        </div>
-        <div className="px-5 pb-2 pt-2">
-          <div className="flex flex-wrap gap-x-4 gap-y-1 mb-2 text-[10px] text-gray-500">
-            <span><span className="inline-block w-2.5 h-2.5 rounded-sm mr-1 align-middle" style={{ background: '#fee2e2' }} />주목 필요 구역</span>
-            <span>● 붉은 점 = 주목 산업 (이름 표시) &nbsp;○ 파란 점 = 기타 산업</span>
-            <span>점선 = 중앙값 기준</span>
-          </div>
-          <ResponsiveContainer width="100%" height={380}>
-            <ScatterChart margin={{ top: 10, right: 70, bottom: 30, left: 10 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <ReferenceArea x1={medRisk} y1={medRecent} fill="#fee2e2" fillOpacity={0.25} />
-              <XAxis
-                type="number" dataKey="x" name="risk_score"
-                tick={{ fill: '#9ca3af', fontSize: 11 }}
-                label={{ value: 'risk_score →', fill: '#9ca3af', fontSize: 10, position: 'insideBottomRight', offset: -5 }}
-              />
-              <YAxis
-                type="number" dataKey="y" name="최근90일"
-                tick={{ fill: '#9ca3af', fontSize: 11 }}
-                label={{ value: '최근 90일 발의 →', fill: '#9ca3af', fontSize: 10, angle: -90, position: 'insideTopLeft', offset: 5 }}
-              />
-              <ZAxis type="number" dataKey="z" range={[30, 300]} />
-              <Tooltip content={<ScatterTooltip />} />
-              <ReferenceLine x={medRisk} stroke="#cbd5e1" strokeDasharray="4 3" />
-              <ReferenceLine y={medRecent} stroke="#cbd5e1" strokeDasharray="4 3" />
-              <Scatter
-                data={scatterData}
-                shape={(props: any) => <DangerDot {...props} thX={medRisk} thY={medRecent} />}
-              />
-            </ScatterChart>
-          </ResponsiveContainer>
-        </div>
-        <div className="px-5 pb-3 text-right">
-          <span className="text-[11px] text-gray-400">* source: Legiscope, 국회 OpenAPI</span>
-        </div>
-      </div>
-
-      {/* 워치리스트 테이블 */}
+      {/* 워치리스트 */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="flex items-center justify-between px-5 py-3" style={{ background: '#1B2745' }}>
           <div>
             <h3 className="text-sm font-semibold text-white">규제 리스크 워치리스트</h3>
-            <p className="text-[10px] mt-0.5" style={{ color: '#93c5fd' }}>위험도 × 최근활성도 종합 점수 기준 상위 15개 산업</p>
+            <p className="text-[10px] mt-0.5" style={{ color: '#93c5fd' }}>위험도 × 최근활성도 종합 점수 기준</p>
           </div>
         </div>
         <div className="overflow-x-auto">
@@ -196,7 +170,7 @@ export default function RiskTab({ signals, asOf }: RiskTabProps) {
               </tr>
             </thead>
             <tbody>
-              {watchList.map((s, i) => {
+              {displayList.map((s, i) => {
                 const badge = getRiskBadge(s.risk_score ?? 0, maxRisk)
                 const riskPct = Math.min(((s.risk_score ?? 0) / maxRisk * 100), 100).toFixed(0)
                 const recentPct = Math.min(((s.recent_90d_bills ?? 0) / maxRecent * 100), 100).toFixed(0)
@@ -241,8 +215,68 @@ export default function RiskTab({ signals, asOf }: RiskTabProps) {
             </tbody>
           </table>
         </div>
-        <div className="px-5 py-2.5 text-right border-t border-gray-100">
-          <span className="text-[11px] text-gray-400">* source: Legiscope, 국회 OpenAPI · risk_score = 규제법안수 × 규제가결률 / 100</span>
+        <div className="px-5 py-2.5 flex items-center justify-between border-t border-gray-100" style={{ background: '#f9fafb' }}>
+          <button
+            onClick={() => setShowAll(v => !v)}
+            className="text-[11px] font-medium px-3 py-1 rounded-lg transition-colors"
+            style={{ color: '#2563eb', background: '#eff6ff' }}
+          >
+            {showAll ? '▲ 접기' : `▼ 전체 보기 (${watchList.length}개 산업)`}
+          </button>
+          <span className="text-[11px] text-gray-400">* source: Legiscope, 국회 OpenAPI</span>
+        </div>
+      </div>
+
+      {/* 4분면 리스크 매트릭스 */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="px-5 pt-5 pb-1">
+          <h3 className="text-[15px] font-bold tracking-tight" style={{ color: '#1B2745' }}>리스크 매트릭스</h3>
+          <p className="text-[11px] text-gray-400 mt-0.5">
+            오른쪽 위 붉은 구역 = 규제위험 높고 최근 입법도 활발한 산업
+          </p>
+        </div>
+        <div className="px-5 pb-2 pt-2">
+          {outliers.length > 0 && (
+            <div className="mb-2 px-3 py-2 rounded-lg text-[11px] text-amber-700 flex flex-wrap gap-x-2" style={{ background: '#fefce8', border: '1px solid #fde68a' }}>
+              <span className="font-medium">⚠ 이상치 제외:</span>
+              {outliers.map(o => (
+                <span key={o.ksic_code}>
+                  {getKsicName(o.ksic_code)} (risk {(o.risk_score ?? 0).toFixed(1)} / 최근 {o.recent_90d_bills}건)
+                </span>
+              ))}
+            </div>
+          )}
+          <div className="flex flex-wrap gap-x-4 gap-y-1 mb-2 text-[10px] text-gray-500">
+            <span><span className="inline-block w-2.5 h-2.5 rounded-sm mr-1 align-middle" style={{ background: '#fee2e2' }} />주목 필요 구역</span>
+            <span>● 붉은 점 = 주목 산업 &nbsp;○ 파란 점 = 기타 산업 &nbsp;점선 = 중앙값</span>
+          </div>
+          <ResponsiveContainer width="100%" height={360}>
+            <ScatterChart margin={{ top: 10, right: 70, bottom: 30, left: 10 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+              <ReferenceArea x1={medRisk} y1={medRecent} fill="#fee2e2" fillOpacity={0.3} />
+              <XAxis
+                type="number" dataKey="x" name="risk_score"
+                tick={{ fill: '#9ca3af', fontSize: 11 }}
+                label={{ value: 'risk_score →', fill: '#9ca3af', fontSize: 10, position: 'insideBottomRight', offset: -5 }}
+              />
+              <YAxis
+                type="number" dataKey="y" name="최근90일"
+                tick={{ fill: '#9ca3af', fontSize: 11 }}
+                label={{ value: '최근 90일 →', fill: '#9ca3af', fontSize: 10, angle: -90, position: 'insideTopLeft', offset: 5 }}
+              />
+              <ZAxis type="number" dataKey="z" range={[30, 300]} />
+              <Tooltip content={<ScatterTooltip />} />
+              <ReferenceLine x={medRisk} stroke="#cbd5e1" strokeDasharray="4 3" />
+              <ReferenceLine y={medRecent} stroke="#cbd5e1" strokeDasharray="4 3" />
+              <Scatter
+                data={scatterData}
+                shape={(props: any) => <DangerDot {...props} thX={medRisk} thY={medRecent} />}
+              />
+            </ScatterChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="px-5 pb-3 text-right">
+          <span className="text-[11px] text-gray-400">* source: Legiscope, 국회 OpenAPI · 95th percentile 기준 이상치 별도 표기</span>
         </div>
       </div>
 
