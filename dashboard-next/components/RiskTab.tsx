@@ -237,13 +237,14 @@ export default function RiskTab({ signals, asOf }: RiskTabProps) {
         </div>
         <div className="px-5 pb-2 pt-2">
           {outliers.length > 0 && (
-            <div className="mb-2 px-3 py-2 rounded-lg text-[11px] text-amber-700 flex flex-wrap gap-x-2" style={{ background: '#fefce8', border: '1px solid #fde68a' }}>
-              <span className="font-medium">⚠ 이상치 제외:</span>
-              {outliers.map(o => (
-                <span key={o.ksic_code}>
+            <div className="mb-2 px-3 py-2 rounded-lg text-[11px] text-amber-700" style={{ background: '#fefce8', border: '1px solid #fde68a' }}>
+              <span className="font-medium">⚠ 이상치 제외 ({outliers.length}개): </span>
+              {outliers.slice(0, 3).map(o => (
+                <span key={o.ksic_code} className="mr-2">
                   {getKsicName(o.ksic_code)} (risk {(o.risk_score ?? 0).toFixed(1)} / 최근 {o.recent_90d_bills}건)
                 </span>
               ))}
+              {outliers.length > 3 && <span className="text-amber-500">외 {outliers.length - 3}개</span>}
             </div>
           )}
           <div className="flex flex-wrap gap-x-4 gap-y-1 mb-2 text-[10px] text-gray-500">

@@ -54,15 +54,22 @@ export default function Dashboard() {
   }, [])
 
   async function loadSignals() {
+    // 최신 as_of_date 먼저 확인
+    const { data: latest } = await supabase
+      .from('industry_signals')
+      .select('as_of_date')
+      .order('as_of_date', { ascending: false })
+      .limit(1)
+      .single()
+    const latestDate = latest?.as_of_date
+    // 최신 스냅샷만 로드
     const { data, error } = await supabase
       .from('industry_signals')
       .select('*')
+      .eq('as_of_date', latestDate ?? '')
     if (error) throw error
     setSignals(data ?? [])
-    if (data?.length) {
-      const dates = data.map(d => d.as_of_date).filter(Boolean)
-      if (dates.length) setAsOf(dates.sort().at(-1)!)
-    }
+    if (latestDate) setAsOf(latestDate)
   }
 
   async function loadStats() {
