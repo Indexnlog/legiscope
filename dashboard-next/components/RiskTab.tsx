@@ -113,7 +113,6 @@ export default function RiskTab({ signals, asOf }: RiskTabProps) {
     })
 
   const displayList = showAll ? watchList.slice(0, 15) : watchList.slice(0, 4)
-  const topRecentIndustry = [...l2].sort((a, b) => (b.recent_90d_bills ?? 0) - (a.recent_90d_bills ?? 0))[0]
 
   // X/Y 축 log 틱 표시값
   const xTickFormatter = (v: number) => fromLog(v).toFixed(1)
@@ -136,27 +135,6 @@ export default function RiskTab({ signals, asOf }: RiskTabProps) {
             {asOf && <p className="text-[10px] text-blue-400 mt-0.5">기준일 {asOf.slice(0, 10)}</p>}
           </div>
         </div>
-      </div>
-
-      {/* KPI 카드 */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          { label: '분석 산업 수', value: l2.length + '개', color: '#3182f6' },
-          { label: '최고 risk_score', value: maxRisk.toFixed(2), color: '#f04452' },
-          { label: '주목 산업', value: dangerItems.length + '개', color: '#f59e0b', sub: '위험高 + 활성高' },
-          {
-            label: '최근 90일 최다',
-            value: (topRecentIndustry?.recent_90d_bills ?? 0) + '건',
-            color: '#a855f7',
-            sub: getKsicName(topRecentIndustry?.ksic_code).slice(0, 9),
-          },
-        ].map(c => (
-          <div key={c.label} className="rounded-xl p-4 text-center bg-white border border-gray-200 shadow-sm">
-            <div className="text-[11px] text-gray-500 mb-1">{c.label}</div>
-            <div className="text-xl font-bold" style={{ color: c.color }}>{c.value}</div>
-            {c.sub && <div className="text-[10px] text-gray-400 mt-0.5 truncate">{c.sub}</div>}
-          </div>
-        ))}
       </div>
 
       {/* 워치리스트 */}
