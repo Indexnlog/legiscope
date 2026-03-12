@@ -20,9 +20,10 @@ function getRiskBadge(score: number, max: number) {
   return { label: 'Low', bg: '#f0fdf4', text: '#15803d' }
 }
 
-// log1p 스케일 변환 (0 포함 데이터에 안전)
-const toLog = (v: number) => Math.log1p(v)
-const fromLog = (v: number) => Math.expm1(v)
+function percentile(arr: number[], p: number) {
+  const sorted = [...arr].sort((a, b) => a - b)
+  return sorted[Math.min(Math.floor(sorted.length * p / 100), sorted.length - 1)] ?? 0
+}
 
 const ScatterTooltip = ({ active, payload }: any) => {
   if (!active || !payload?.length) return null
@@ -33,14 +34,13 @@ const ScatterTooltip = ({ active, payload }: any) => {
       <p className="font-bold mb-1.5" style={{ color: '#1B2745' }}>
         {getKsicName(d.code)} ({d.code})
       </p>
-      <p className="text-gray-500">risk_score: <span className="font-semibold text-red-500">{d.riskRaw?.toFixed(2)}</span></p>
-      <p className="text-gray-500">최근 90일: <span className="font-semibold">{d.recentRaw}건</span></p>
+      <p className="text-gray-500">risk_score: <span className="font-semibold text-red-500">{d.x?.toFixed(2)}</span></p>
+      <p className="text-gray-500">최근 90일: <span className="font-semibold">{d.y}건</span></p>
       <p className="text-gray-500">총 발의: {d.z?.toLocaleString()}건</p>
     </div>
   )
 }
 
-// 위험 구역 상위 N개만 레이블 표시
 function ScatterDot(props: any) {
   const { cx, cy, payload, labelSet } = props
   if (cx == null || cy == null) return null
@@ -75,28 +75,32 @@ export default function RiskTab({ signals, asOf }: RiskTabProps) {
   const maxRisk = Math.max(...l2.map(s => s.risk_score ?? 0), 0.01)
   const maxRecent = Math.max(...l2.map(s => s.recent_90d_bills ?? 0), 1)
 
-  // log 변환된 산점도 데이터
-  const scatterData = l2.map(s => ({
-    x: toLog(s.risk_score ?? 0),
-    y: toLog(s.recent_90d_bills ?? 0),
+  // 90th percentile 캡: scatter에서 이상치 제외
+  const capRisk = percentile(l2.map(s => s.risk_score ?? 0), 90)
+  const capRecent = percentile(l2.map(s => s.recent_90d_bills ?? 0), 90)
+
+  const inView = l2.filter(s => (s.risk_score ?? 0) <= capRisk && (s.recent_90d_bills ?? 0) <= capRecent)
+  const excluded = l2.filter(s => (s.risk_score ?? 0) > capRisk || (s.recent_90d_bills ?? 0) > capRecent)
+
+  // scatter 데이터 (선형 스케일)
+  const scatterData = inView.map(s => ({
+    x: s.risk_score ?? 0,
+    y: s.recent_90d_bills ?? 0,
     z: s.total_bills ?? 0,
-    riskRaw: s.risk_score ?? 0,
-    recentRaw: s.recent_90d_bills ?? 0,
     code: s.ksic_code,
-    danger: false, // 아래에서 설정
+    danger: false,
   }))
 
-  // log 공간의 중앙값
+  // 4분면 기준선: inView 내 중앙값
   const xs = scatterData.map(d => d.x).sort((a, b) => a - b)
   const ys = scatterData.map(d => d.y).sort((a, b) => a - b)
   const medX = xs[Math.floor(xs.length / 2)] ?? 0
   const medY = ys[Math.floor(ys.length / 2)] ?? 0
 
-  // 위험 구역 = log 공간 우상단
   const dangerItems = scatterData.filter(d => d.x >= medX && d.y >= medY)
   dangerItems.forEach(d => { d.danger = true })
 
-  // 레이블: 위험 구역 내 상위 5개 (log x+y 합산 기준)
+  // 레이블: 위험 구역 상위 5개만
   const labelSet = new Set(
     [...dangerItems]
       .sort((a, b) => (b.x + b.y) - (a.x + a.y))
@@ -104,19 +108,14 @@ export default function RiskTab({ signals, asOf }: RiskTabProps) {
       .map(d => d.code)
   )
 
-  // 워치리스트
-  const watchList = [...l2]
-    .sort((a, b) => {
-      const ua = (a.risk_score ?? 0) / maxRisk * 0.55 + (a.recent_90d_bills ?? 0) / maxRecent * 0.45
-      const ub = (b.risk_score ?? 0) / maxRisk * 0.55 + (b.recent_90d_bills ?? 0) / maxRecent * 0.45
-      return ub - ua
-    })
+  // 워치리스트 (이상치 포함 전체 정렬)
+  const watchList = [...l2].sort((a, b) => {
+    const ua = (a.risk_score ?? 0) / maxRisk * 0.55 + (a.recent_90d_bills ?? 0) / maxRecent * 0.45
+    const ub = (b.risk_score ?? 0) / maxRisk * 0.55 + (b.recent_90d_bills ?? 0) / maxRecent * 0.45
+    return ub - ua
+  })
 
   const displayList = showAll ? watchList.slice(0, 15) : watchList.slice(0, 4)
-
-  // X/Y 축 log 틱 표시값
-  const xTickFormatter = (v: number) => fromLog(v).toFixed(1)
-  const yTickFormatter = (v: number) => Math.round(fromLog(v)).toString()
 
   return (
     <div className="space-y-5">
@@ -208,38 +207,45 @@ export default function RiskTab({ signals, asOf }: RiskTabProps) {
           >
             {showAll ? '▲ 접기' : `▼ 전체 보기 (${watchList.length}개 산업)`}
           </button>
-          <span className="text-[11px] text-gray-400">* source: Legiscope, 국회 OpenAPI</span>
+          <span className="text-[11px] text-gray-400">* source: Legiscope, 국회 OpenAPI · risk_score = 규제법안수 × 규제가결률 / 100</span>
         </div>
       </div>
 
-      {/* 4분면 리스크 매트릭스 — log scale */}
+      {/* 4분면 리스크 매트릭스 */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="px-5 pt-5 pb-1">
           <h3 className="text-[15px] font-bold tracking-tight" style={{ color: '#1B2745' }}>리스크 매트릭스</h3>
           <p className="text-[11px] text-gray-400 mt-0.5">
-            오른쪽 위 붉은 구역 = 규제위험 높고 최근 입법도 활발한 산업 · 점선 = 중앙값 · 로그 스케일
+            오른쪽 위 붉은 구역 = 규제위험 높고 최근 입법도 활발한 산업 · 점선 = 중앙값
           </p>
         </div>
         <div className="px-5 pb-2 pt-2">
+          {/* 이상치 제외 안내 */}
+          {excluded.length > 0 && (
+            <div className="mb-3 px-3 py-1.5 rounded-lg text-[11px] flex items-center gap-2" style={{ background: '#fefce8', border: '1px solid #fde68a' }}>
+              <span className="text-amber-600 font-medium">⚠ 차트 범위 초과 ({excluded.length}개, 워치리스트 참조):</span>
+              <span className="text-amber-700 truncate">
+                {excluded.map(o => `${getKsicName(o.ksic_code)} (${(o.risk_score ?? 0).toFixed(1)})`).join(' · ')}
+              </span>
+            </div>
+          )}
           <div className="flex flex-wrap gap-x-4 gap-y-1 mb-2 text-[10px] text-gray-500">
             <span><span className="inline-block w-2.5 h-2.5 rounded-sm mr-1 align-middle" style={{ background: '#fee2e2' }} />주목 필요 구역</span>
-            <span>● 붉은 점 = 주목 산업 (상위 5개 이름 표시)</span>
-            <span>○ 파란 점 = 기타 산업</span>
+            <span>● 붉은 점 = 주목 산업 (상위 5개 이름 표시) &nbsp; ○ 파란 점 = 기타</span>
           </div>
-          <ResponsiveContainer width="100%" height={360}>
+          <ResponsiveContainer width="100%" height={340}>
             <ScatterChart margin={{ top: 10, right: 80, bottom: 30, left: 10 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
               <ReferenceArea x1={medX} y1={medY} fill="#fee2e2" fillOpacity={0.3} />
               <XAxis
                 type="number" dataKey="x" name="risk_score"
                 tick={{ fill: '#9ca3af', fontSize: 11 }}
-                tickFormatter={xTickFormatter}
+                tickFormatter={v => v.toFixed(1)}
                 label={{ value: 'risk_score →', fill: '#9ca3af', fontSize: 10, position: 'insideBottomRight', offset: -5 }}
               />
               <YAxis
                 type="number" dataKey="y" name="최근90일"
                 tick={{ fill: '#9ca3af', fontSize: 11 }}
-                tickFormatter={yTickFormatter}
                 label={{ value: '최근 90일 →', fill: '#9ca3af', fontSize: 10, angle: -90, position: 'insideTopLeft', offset: 5 }}
               />
               <ZAxis type="number" dataKey="z" range={[30, 250]} />
@@ -254,7 +260,7 @@ export default function RiskTab({ signals, asOf }: RiskTabProps) {
           </ResponsiveContainer>
         </div>
         <div className="px-5 pb-3 text-right">
-          <span className="text-[11px] text-gray-400">* source: Legiscope, 국회 OpenAPI · 축: log(1+값) 변환 적용</span>
+          <span className="text-[11px] text-gray-400">* source: Legiscope, 국회 OpenAPI · 상위 90% 범위 표시</span>
         </div>
       </div>
 
