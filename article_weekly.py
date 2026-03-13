@@ -341,27 +341,46 @@ def generate_draft_claude(trigger_summary: str, trigger_type: str) -> str:
         import anthropic
         client = anthropic.Anthropic(api_key=api_key)
 
-        prompt = f"""당신은 한국경제·매일경제 스타일의 경제 전문 기자입니다. 아래 국회 입법 데이터를 바탕으로 기사 초안을 작성하세요.
+        prompt = f"""당신은 한국경제·매일경제 스타일의 경제 전문 기자입니다. 독자는 경영진·투자자·법무담당자입니다. 아래 국회 입법 데이터를 바탕으로 기사 초안을 작성하세요.
 
 트리거 유형: {trigger_type}
 데이터:
 {trigger_summary}
 
 [기사 구조]
-1. 제목: [Legiscope] 제목 (한 줄, 25자 이내)
-   - 팩트 나열 금지. 긴장·각도·동사가 있어야 함.
-   - 좋은 예: "국회가 약국을 다시 짠다", "보험업, 올해만 규제법안 40건 쌓였다", "AI 규제 공백, 언제까지"
-   - 나쁜 예: "약사법 개정안 한 달새 8건 집중 발의" (팩트 나열), "입법 리스크 현황" (추상적)
-2. 부제: 한 줄 (제목 보완, 숫자나 기업명 포함 권장)
-3. 리드문: 2~3문장. 누가/무엇을/왜 중요한지 즉시 전달. 독자가 이것만 읽어도 핵심을 파악할 수 있어야 함.
-4. 본문: 400~500자. 역피라미드 구조 (중요도 순). 흐름 있는 산문체. 법안명은 「」로 인용. 핵심 수치·법안명·키워드는 **볼드**.
-5. 마무리: 기업·투자자 대응 방향 1~2문장. 전망형으로 자연스럽게 마무리.
+1. 제목: [Legiscope] 제목 (한 줄, 30자 이내)
+   - 핵심 원칙: 이슈 실체 + 영향받는 산업/기업명 + 동사.
+   - 법안 성격(규제/지원)에 따라 톤을 다르게: 규제면 긴장·압박, 지원이면 기회·수혜 각도.
+   - 매번 같은 구조 금지. 데이터와 맥락에 맞게 형식을 달리할 것.
+   - 좋은 예 (다양한 형식):
+     "의약품 안전부터 처방 간소화까지…약사법 8건이 제약업계 흔든다" (규제·혼재형)
+     "반도체 특별법, SK하이닉스·삼성에 R&D 세액공제 길 열렸다" (지원·기회형)
+     "국회가 카카오·네이버에 청구서 보냈다" (규제·직격형)
+     "보험업, 올해만 규제법안 40건 쌓였다" (누적·충격형)
+   - 나쁜 예: "약사법 개정안 한 달새 8건 집중 발의" (팩트 나열), "제약업계에 전선이 열렸다" (내용 공허)
+2. 부제: 생략 (제목에 이미 내용 포함)
+3. 리드문: 2~3문장.
+   - 첫 문장은 반드시 기사에서 가장 중요한 팩트여야 한다. "국회에서 ~이 발의됐다" 같은 밋밋한 시작 금지.
+   - 독자가 첫 문장만 읽어도 핵심을 파악할 수 있어야 함.
+4. 본문: 600~800자. 역피라미드 구조. 흐름 있는 산문체. 법안명은 「」로 인용. 핵심 수치·법안명·키워드는 **볼드**.
+   - 영향받는 대표 기업명을 구체적으로 언급. 추론 금지, 법안 내용과 직접 연결된 기업만.
+   - 규제 법안은 비용·부담·리스크 각도로, 지원 법안은 수혜·기회·성장 각도로. 둘이 섞이면 구분 서술.
+   - 데이터에 위원회 정보가 있으면 "○○위원회에 계류 중" 형태로 반드시 언급.
+   - 수혜자(기회)와 피해자(부담)를 구분해서 서술.
+5. 마무리: 기업·투자자 대응 방향 1~2문장. 규제면 대비, 지원이면 활용 관점으로.
+
+[문체 원칙]
+- 능동태를 원칙으로. "발의됐다" 대신 "○○의원이 발의했다", "법안이 규제한다" 대신 "국회가 규제에 나섰다".
+- 수동태는 주어를 알 수 없을 때만 허용.
 
 [절대 금지]
 - "시사점 1, 2, 3" 같은 번호 매기기
 - "첫째, 둘째, 셋째" 나열
 - "이를 통해" "따라서" 로 시작하는 결론 문단
 - 소제목(### 등) 사용
+- 제공된 데이터에 없는 배경·맥락 추론 (예: "업계에서는 ~로 분석한다" 식의 창작 절대 금지)
+- 법안 제안이유가 제공된 경우, 반드시 실제 내용만 인용. 제공 안 된 법안의 내용은 추론하지 말 것
+- 발의·계류 중인 법안에 "영향을 미친다" 단정 금지. 반드시 "통과 시", "가결될 경우", "~될 수 있다" 등 조건부 표현 사용
 
 [말미 고정 문구 — 본문 완료 후 한 줄 띄고 반드시 포함]
 이 기사는 News Epoch가 구축한 입법 추적 엔진 Legiscope를 기반으로 작성됐습니다.
@@ -370,7 +389,7 @@ def generate_draft_claude(trigger_summary: str, trigger_type: str) -> str:
 
         msg = client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=1024,
+            max_tokens=2048,
             messages=[{"role": "user", "content": prompt}]
         )
         return msg.content[0].text
@@ -383,7 +402,7 @@ def save_to_obsidian(title: str, content: str) -> str:
     import os
     obsidian_dir = (
         r"C:\Users\ekapr\Dropbox\앱\remotely-save\Second_Brain"
-        r"\20_Projects_Builder\21_News_Epoch\2026 입법레이더-Legiscope\01_기사초안"
+        r"\20_Projects_Builder\21_News Epoch\2026 입법레이더-Legiscope\01_기사초안"
     )
     os.makedirs(obsidian_dir, exist_ok=True)
     filename = f"{TODAY} {title[:20].replace('/', '-')}.md"
@@ -438,21 +457,42 @@ def main():
 
         if args.draft and has_triggers:
             # 가장 강한 트리거 선택해서 초안 생성
+            file_label = ""  # Obsidian 파일명용 레이블
             if passed:
                 trigger_type = "규제 법안 가결"
                 key_data = "\n".join([f"- {b['bill_name']} ({b['proc_result_cd']}, {b['proc_dt']})" for b in passed[:3]])
+                file_label = passed[0]["bill_name"][:15]
             elif clusters:
                 trigger_type = "동일 이슈 집중 발의"
                 first_key, first_group = list(clusters.items())[0]
+                file_label = first_key[:15]  # 예: "약사법", "정보통신망"
                 ind = industry_name(first_group[0]["ksic_code"])
                 key_data = f"[{ind}] '{first_key}…' 관련 법안 {len(first_group)}건 집중 발의\n"
-                key_data += "\n".join([f"- {b['bill_name']} ({b['propose_dt']})" for b in first_group[:5]])
+                # DB에서 proposal_reason 조회
+                try:
+                    db = get_client()
+                    bill_ids = [b["bill_id"] for b in first_group[:8] if b.get("bill_id")]
+                    if bill_ids:
+                        detail_rows = db.table("bills").select("bill_id,bill_name,propose_dt,proposer,committee,proposal_reason").in_("bill_id", bill_ids).execute().data
+                        detail_map = {r["bill_id"]: r for r in detail_rows}
+                        for b in first_group[:8]:
+                            detail = detail_map.get(b.get("bill_id"), {})
+                            reason = detail.get("proposal_reason") or ""
+                            reason_summary = reason[:300].replace("\n", " ") if reason else "제안이유 미수집"
+                            committee = detail.get("committee") or b.get("committee", "")
+                            key_data += f"- {b['bill_name']} ({b['propose_dt']}, {detail.get('proposer', '')})\n  소관위원회: {committee}\n  제안이유: {reason_summary}\n"
+                    else:
+                        key_data += "\n".join([f"- {b['bill_name']} ({b['propose_dt']})" for b in first_group[:5]])
+                except Exception:
+                    key_data += "\n".join([f"- {b['bill_name']} ({b['propose_dt']})" for b in first_group[:5]])
             elif intl:
                 trigger_type = "국제 규제 연동 법안"
                 key_data = "\n".join([f"- {b['bill_name']} [참조: {ref}]" for b, ref in intl[:3]])
+                file_label = intl[0][0]["bill_name"][:15]
             else:
                 trigger_type = "계류 규제법안 심사 진전"
                 key_data = "\n".join([f"- {b['bill_name']} ({b.get('committee_result','')})" for b in moved[:3]])
+                file_label = moved[0]["bill_name"][:15]
 
             print(f"\n📝 Claude API로 기사 초안 생성 중... ({trigger_type})")
             draft = generate_draft_claude(key_data, trigger_type)
@@ -460,8 +500,8 @@ def main():
             print(draft)
             print("=" * 65)
 
-            # Obsidian 저장
-            save_to_obsidian(trigger_type, draft)
+            # Obsidian 저장 (파일명: 날짜 + 법안명)
+            save_to_obsidian(file_label or trigger_type, draft)
 
             # Slack으로 초안 전송
             if args.slack:
