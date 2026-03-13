@@ -4,6 +4,12 @@
      PYTHONPATH=. python article_weekly.py --monthly
      PYTHONPATH=. python article_weekly.py --slack        (Slack 전송 포함)
      PYTHONPATH=. python article_weekly.py --draft        (Claude API 초안 생성)
+     PYTHONPATH=. python article_weekly.py --sector 금융   (섹터 심층 기사 생성)
+     PYTHONPATH=. python article_weekly.py --sector 디지털AI
+     PYTHONPATH=. python article_weekly.py --sector 바이오의료
+     PYTHONPATH=. python article_weekly.py --sector 에너지환경
+     PYTHONPATH=. python article_weekly.py --sector 부동산건설
+     PYTHONPATH=. python article_weekly.py --sector 제조업
 """
 import csv
 import sys
@@ -53,6 +59,31 @@ INTL_KEYWORDS = {
 
 PASSED = {"원안가결", "수정가결"}
 DEAD = {"임기만료폐기", "폐기", "철회", "대안반영폐기"}
+
+# 섹터별 3자리 KSIC 코드
+SECTOR_KSIC = {
+    "금융":     ["641", "642", "649", "651", "652", "653", "661", "662", "663"],
+    "디지털AI": ["582", "620", "631", "639", "721"],
+    "바이오의료": ["211", "212", "271", "272", "861", "862", "871", "872"],
+    "에너지환경": ["351", "352", "381", "382", "390"],
+    "부동산건설": ["410", "421", "681", "682"],
+    "제조업":   ["201", "241", "261", "262", "291", "292"],
+}
+
+KSIC_LABEL = {
+    "641": "은행·저축기관", "642": "투자기관", "649": "대부업·기타금융",
+    "651": "보험업", "652": "재보험업", "653": "연금기금",
+    "661": "금융지원서비스", "662": "보험지원서비스", "663": "금융투자자문",
+    "582": "소프트웨어개발", "620": "컴퓨터프로그래밍", "631": "데이터처리·호스팅",
+    "639": "기타정보서비스", "721": "연구개발업(AI)",
+    "211": "의약품제조", "212": "한의약품제조", "271": "의료기기제조",
+    "272": "측정기기제조", "861": "병원", "862": "의원", "871": "요양원", "872": "복지시설",
+    "351": "전기업", "352": "가스업", "381": "폐기물수집운반",
+    "382": "폐기물처리", "390": "환경정화",
+    "410": "건물건설업", "421": "토목건설업", "681": "부동산임대", "682": "부동산개발",
+    "201": "기초화학물질", "241": "금속제조", "261": "반도체제조",
+    "262": "전자부품제조", "291": "자동차제조", "292": "자동차부품",
+}
 
 
 def load_bills():
@@ -330,6 +361,152 @@ def print_monthly_report(bills):
             print(f"     - {b['bill_name'][:52]} ({b['proc_dt']})")
 
 
+def get_sector_data(sector_name: str) -> dict:
+    """섹터별 industry_signals + 실제 법안 목록을 DB에서 직접 조회"""
+    db = get_client()
+    ksic_prefixes = SECTOR_KSIC.get(sector_name, [])
+    if not ksic_prefixes:
+        raise ValueError(f"알 수 없는 섹터: {sector_name}. 가능: {list(SECTOR_KSIC.keys())}")
+
+    from datetime import date, timedelta
+    sixty_days_ago = str(date.today() - timedelta(days=60))
+
+    # 1. industry_signals 조회 (각 KSIC 3자리, level=3)
+    signals = []
+    for prefix in ksic_prefixes:
+        rows = db.table("industry_signals").select("*").eq("ksic_code", prefix).order("as_of_date", desc=True).limit(1).execute().data
+        if rows:
+            signals.append(rows[0])
+
+    # 2. 최근 60일 발의 법안 (계류 포함, 해당 섹터 KSIC)
+    # bills.ksic_codes는 배열이라 contains 필터 불가 → bill_name 키워드 대신 industry_signals 기준으로 데이터 구성
+    # → 섹터 대표 키워드로 조회
+    sector_keywords = {
+        "금융":     ["가상자산", "보험", "은행", "금융", "대부업", "자본시장"],
+        "디지털AI": ["인공지능", "AI", "플랫폼", "데이터", "소프트웨어", "정보통신"],
+        "바이오의료": ["의약품", "의료기기", "병원", "약사법", "제약"],
+        "에너지환경": ["전기", "에너지", "탄소", "환경", "폐기물", "신재생"],
+        "부동산건설": ["부동산", "건설", "주택", "임대", "분양"],
+        "제조업":   ["반도체", "자동차", "화학", "제조", "공장"],
+    }
+    keywords = sector_keywords.get(sector_name, [])
+
+    recent_bills, pending_reg_bills = [], []
+    seen_ids = set()
+    for kw in keywords:
+        rows = db.table("bills").select(
+            "bill_id,bill_name,propose_dt,committee,pass_gubun,proc_result_cd,regulation_type,proposer"
+        ).like("bill_name", f"%{kw}%").eq("age", "22").order("propose_dt", desc=True).limit(30).execute().data
+        for r in rows:
+            if r["bill_id"] in seen_ids:
+                continue
+            seen_ids.add(r["bill_id"])
+            if r.get("propose_dt", "") >= sixty_days_ago:
+                recent_bills.append(r)
+            if (r.get("regulation_type") == "규제"
+                    and r.get("proc_result_cd") not in ("원안가결", "수정가결", "임기만료폐기", "폐기", "철회")):
+                pending_reg_bills.append(r)
+
+    recent_bills = sorted(recent_bills, key=lambda x: x.get("propose_dt",""), reverse=True)[:15]
+    pending_reg_bills = sorted(pending_reg_bills, key=lambda x: x.get("propose_dt",""))[:10]
+
+    return {
+        "sector_name": sector_name,
+        "signals": signals,
+        "recent_bills": recent_bills,
+        "pending_reg_bills": pending_reg_bills,
+    }
+
+
+def build_sector_prompt_data(data: dict) -> str:
+    """DB 조회 결과를 Claude 프롬프트용 텍스트로 변환 — 모든 수치가 DB 기반"""
+    sector_name = data["sector_name"]
+    signals = data["signals"]
+    recent_bills = data["recent_bills"]
+    pending_reg_bills = data["pending_reg_bills"]
+    from datetime import date
+    today = str(date.today())
+
+    lines = [f"[섹터: {sector_name}업]", f"[기준일: {today}]", ""]
+
+    # industry_signals 수치 (검증된 DB 데이터)
+    lines.append("=== 세부 산업별 지표 (industry_signals, DB 직접 조회) ===")
+    lines.append("※ 이 수치 외의 숫자를 임의로 생성하는 것은 절대 금지")
+    for s in sorted(signals, key=lambda x: float(x.get("risk_score") or 0), reverse=True):
+        code = s["ksic_code"]
+        label = KSIC_LABEL.get(code, code)
+        lines.append(
+            f"- {label}({code}): 전체 {s['total_bills']}건, "
+            f"규제 {s['reg_count']}건({s['reg_ratio']}%), "
+            f"규제가결률 {s['reg_pass_rate']}%, "
+            f"계류 {s['pending_bills']}건, "
+            f"risk_score {s['risk_score']}"
+        )
+
+    # 최근 60일 실제 법안
+    lines.append(f"\n=== 최근 60일 발의 법안 ({len(recent_bills)}건, DB 직접 조회) ===")
+    for b in recent_bills:
+        status = b.get("proc_result_cd") or b.get("pass_gubun") or "계류"
+        cmt = (b.get("committee") or "미배정")[:20]
+        lines.append(f"- {b['bill_name']} ({b['propose_dt']}, {status}, {cmt})")
+
+    # 계류 중인 규제 법안
+    lines.append(f"\n=== 계류 중인 규제 법안 ({len(pending_reg_bills)}건, DB 직접 조회) ===")
+    for b in pending_reg_bills:
+        cmt = (b.get("committee") or "미배정")[:20]
+        lines.append(f"- {b['bill_name']} (발의 {b['propose_dt']}, {cmt})")
+
+    return "\n".join(lines)
+
+
+def generate_sector_article(sector_name: str) -> str:
+    """섹터 심층 기사 생성 — DB 수치를 직접 주입해 Claude 창작 방지"""
+    import os, anthropic
+    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return "[ANTHROPIC_API_KEY 미설정]"
+
+    data = get_sector_data(sector_name)
+    db_data = build_sector_prompt_data(data)
+
+    prompt = f"""당신은 한국경제·매일경제 스타일의 경제 전문 기자입니다. 독자는 경영진·투자자·법무담당자입니다.
+
+아래는 국회 발의 법안 DB에서 직접 조회한 {sector_name}업 입법 데이터입니다. 이 데이터만을 근거로 기사를 작성하세요.
+
+{db_data}
+
+[기사 구조]
+1. 제목: [Legiscope] 제목 (30자 내외)
+   - 가장 임팩트 있는 수치 또는 사실 중심. 매번 다른 구조.
+2. 리드문: 2~3문장. 첫 문장 = 가장 중요한 팩트. "국회에서 ~이 발의됐다" 금지.
+3. 본문: 600~800자. 역피라미드. 법안명은 「」 인용. 핵심 수치·기업명은 **볼드**.
+   - industry_signals 수치는 반드시 위 제공 데이터 그대로 사용. 임의 변경 절대 금지.
+   - 최근 발의 법안 중 주목할 것 2~3건 구체 서술.
+   - 계류 규제법안 건수와 위원회 정보 언급.
+   - 수혜자(기회)와 피해자(부담) 구분 서술. 대표 기업명 구체 언급.
+4. 마무리: 대응 방향 1~2문장.
+
+[절대 금지]
+- 제공된 데이터에 없는 수치 생성 (예: "600건", "23.2%" 같은 임의 숫자)
+- 계류 중인 법안에 "영향을 미친다" 단정 — 반드시 "가결될 경우", "통과 시" 조건부 표현
+- 소제목(###) 사용
+- 제공 안 된 법안 내용 추론·창작
+- "이를 통해", "따라서" 로 시작하는 결론
+
+[말미 고정 문구]
+이 기사는 News Epoch가 구축한 입법 추적 엔진 Legiscope를 기반으로 작성됐습니다.
+
+한국어로 작성."""
+
+    client = anthropic.Anthropic(api_key=api_key)
+    msg = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=2048,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return msg.content[0].text
+
+
 def generate_draft_claude(trigger_summary: str, trigger_type: str) -> str:
     """Claude API로 기사 초안 생성"""
     import os
@@ -419,7 +596,18 @@ def main():
     parser.add_argument("--monthly", action="store_true", help="월간 리포트 모드")
     parser.add_argument("--slack",   action="store_true", help="Slack 전송 포함")
     parser.add_argument("--draft",   action="store_true", help="Claude API 기사 초안 생성")
+    parser.add_argument("--sector",  type=str, default="", help=f"섹터 심층 기사 생성: {list(SECTOR_KSIC.keys())}")
     args = parser.parse_args()
+
+    # --sector 모드: DB 수치 직접 주입해서 섹터 기사 생성
+    if args.sector:
+        print(f"📊 {args.sector}업 섹터 기사 생성 중 (DB 직접 조회)...")
+        draft = generate_sector_article(args.sector)
+        print("\n" + "=" * 65)
+        print(draft)
+        print("=" * 65)
+        save_to_obsidian(f"{args.sector}편", draft)
+        return
 
     bills = load_bills()
 
