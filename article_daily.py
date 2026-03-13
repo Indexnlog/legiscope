@@ -135,11 +135,11 @@ def build_brief(triggers, passed_total, proposed_total):
     ]
     if triggers:
         for t in triggers:
-            lines.append(f"🔴 [{t['type']}] {t['count']}건 — 기사각도: '{t['angle']}'")
+            lines.append(f"[●] [{t['type']}] {t['count']}건 — 기사각도: '{t['angle']}'")
             lines.extend(t["lines"])
             lines.append("")
     else:
-        lines.append("⚪ 오늘 즉시 기사감 없음")
+        lines.append("[-] 오늘 즉시 기사감 없음")
     return "\n".join(lines)
 
 
@@ -187,7 +187,7 @@ def save_to_obsidian(title: str, content: str):
     with open(path, "w", encoding="utf-8") as f:
         f.write(f"---\ntags: [legiscope, 입법레이더, 기사, 자동생성]\ndate: {TODAY}\nstatus: 초안(AI)\n---\n\n")
         f.write(content)
-    print(f"✅ Obsidian 저장: {filename}")
+    print(f"[OK] Obsidian 저장: {filename}")
 
 
 def main():
@@ -201,7 +201,7 @@ def main():
     try:
         passed_bills, proposed_bills = fetch_yesterday_bills()
     except Exception as e:
-        print(f"❌ Supabase 조회 실패: {e}")
+        print(f"[X] Supabase 조회 실패: {e}")
         return
 
     print(f"  어제 가결: {len(passed_bills)}건 / 발의: {len(proposed_bills)}건")
@@ -213,13 +213,13 @@ def main():
     if not triggers:
         if args.slack:
             from utils.slack import SlackNotifier
-            SlackNotifier().send(f"⚪ *입법 레이더 일간* ({YESTERDAY_STR}) — 오늘 기사감 없음")
+            SlackNotifier().send(f"[-] *입법 레이더 일간* ({YESTERDAY_STR}) — 오늘 기사감 없음")
         return
 
     # Slack 브리프 전송
     if args.slack:
         from utils.slack import SlackNotifier
-        SlackNotifier().send(f"🔴 *입법 레이더 일간 브리프* ({YESTERDAY_STR})\n\n```{brief}```")
+        SlackNotifier().send(f"[●] *입법 레이더 일간 브리프* ({YESTERDAY_STR})\n\n```{brief}```")
 
     # 가장 강한 트리거로 초안 생성
     if args.draft:

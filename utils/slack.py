@@ -23,9 +23,9 @@ class SlackNotifier:
                 from slack_sdk import WebClient
                 self.client = WebClient(token=self.token)
             except ImportError:
-                print("⚠ slack_sdk 미설치: pip install slack-sdk")
+                print("[!] slack_sdk 미설치: pip install slack-sdk")
         else:
-            print("⚠ SLACK_TOKEN 미설정 → 콘솔 출력 모드로 실행")
+            print("[!] SLACK_TOKEN 미설정 → 콘솔 출력 모드로 실행")
 
     def is_enabled(self):
         return self.client is not None
@@ -47,10 +47,10 @@ class SlackNotifier:
                 unfurl_links=False,
                 unfurl_media=False,
             )
-            print(f"✅ Slack 전송 완료 (ts: {resp.get('ts')})")
+            print(f"[OK] Slack 전송 완료 (ts: {resp.get('ts')})")
             return True
         except Exception as e:
-            print(f"❌ Slack 전송 실패: {e}")
+            print(f"[X] Slack 전송 실패: {e}")
             return False
 
 
@@ -59,9 +59,9 @@ def send_weekly_brief(has_triggers: bool, trigger_summary: str, date_str: str) -
     notifier = SlackNotifier()
 
     if has_triggers:
-        header = f"🔴 *입법 레이더 주간 브리프* ({date_str}) — 기사 소재 감지"
+        header = f"[●] *입법 레이더 주간 브리프* ({date_str}) — 기사 소재 감지"
     else:
-        header = f"⚪ *입법 레이더 주간 브리프* ({date_str}) — 이번 주 기사감 없음"
+        header = f"[-] *입법 레이더 주간 브리프* ({date_str}) — 이번 주 기사감 없음"
 
     text = f"{header}\n\n```{trigger_summary}```"
     return notifier.send(text)

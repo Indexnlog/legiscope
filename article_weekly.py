@@ -251,19 +251,19 @@ def print_weekly_brief(bills):
     passed = trigger_reg_passed(bills)
     if passed:
         article_count += 1
-        print(f"\n🔴 [즉시 기사감 A] 규제 법안 가결 ({len(passed)}건)")
+        print(f"\n[●] [즉시 기사감 A] 규제 법안 가결 ({len(passed)}건)")
         print(f"   기사 각도: '○○법 통과 — 기업 영향과 대응 방법'")
         print(f"   기간: {WEEK_AGO} ~ {TODAY}")
         for b in passed[:5]:
             print(fmt_bill(b))
     else:
-        print(f"\n⚪ [A] 이번 주 규제 법안 가결 없음")
+        print(f"\n[-] [A] 이번 주 규제 법안 가결 없음")
 
     # B. 집중 발의 클러스터
     clusters = trigger_cluster(bills)
     if clusters:
         article_count += 1
-        print(f"\n🔴 [즉시 기사감 B] 동일 이슈 집중 발의 클러스터 ({len(clusters)}개)")
+        print(f"\n[●] [즉시 기사감 B] 동일 이슈 집중 발의 클러스터 ({len(clusters)}개)")
         print(f"   기사 각도: '국회가 ○○산업을 겨냥했다'")
         for key, group in list(clusters.items())[:5]:
             ind = industry_name(group[0]["ksic_code"])
@@ -271,35 +271,35 @@ def print_weekly_brief(bills):
             for b in group[:2]:
                 print(f"      - {b['bill_name'][:50]} ({b['propose_dt']})")
     else:
-        print(f"\n⚪ [B] 이번 달 집중 발의 클러스터 없음")
+        print(f"\n[-] [B] 이번 달 집중 발의 클러스터 없음")
 
     # C. EU/미국 연동
     intl = trigger_intl(bills)
     if intl:
         article_count += 1
-        print(f"\n🔴 [즉시 기사감 C] 국제 규제 연동 법안 ({len(intl)}건)")
+        print(f"\n[●] [즉시 기사감 C] 국제 규제 연동 법안 ({len(intl)}건)")
         print(f"   기사 각도: '한국판 ○○ 나오나'")
         for b, ref in intl[:5]:
             print(f"  [참조: {ref}] {b['bill_name'][:50]}")
             print(f"      → 발의 {b['propose_dt']} | {b['committee']}")
     else:
-        print(f"\n⚪ [C] 이번 달 국제 연동 법안 없음")
+        print(f"\n[-] [C] 이번 달 국제 연동 법안 없음")
 
     # D. 계류 법안 움직임
     moved = trigger_pending_moved(bills)
     if moved:
         article_count += 1
-        print(f"\n🔴 [즉시 기사감 D] 계류 규제법안 심사 진전 ({len(moved)}건)")
+        print(f"\n[●] [즉시 기사감 D] 계류 규제법안 심사 진전 ({len(moved)}건)")
         print(f"   기사 각도: '잠자던 ○○법, 이번엔 통과되나'")
         for b in moved[:5]:
             print(f"  {b['bill_name'][:52]}")
             print(f"      → 상임위 결과: {b.get('committee_result','')} ({b.get('committee_dt','')})")
     else:
-        print(f"\n⚪ [D] 이번 주 계류 규제법안 심사 진전 없음")
+        print(f"\n[-] [D] 이번 주 계류 규제법안 심사 진전 없음")
 
     print(f"\n{'─'*65}")
     if article_count > 0:
-        print(f"✅ 이번 주 기사 소재 {article_count}개 감지됨 → 기사 작성 권고")
+        print(f"[OK] 이번 주 기사 소재 {article_count}개 감지됨 → 기사 작성 권고")
     else:
         print(f"⏸  이번 주 즉시 기사감 없음 → 패스 (월간 리포트 준비)")
     print(f"{'─'*65}")
@@ -351,7 +351,7 @@ def print_monthly_report(bills):
             seen.add(b["bill_name"])
             unique.append(b)
 
-    print(f"\n✅ [월간 C] 이달 가결 법안 총 {len(unique)}건")
+    print(f"\n[OK] [월간 C] 이달 가결 법안 총 {len(unique)}건")
     reg_passed = [b for b in unique if b["regulation_type"] == "규제"]
     sup_passed = [b for b in unique if b["regulation_type"] == "지원"]
     print(f"   규제 {len(reg_passed)}건 / 지원 {len(sup_passed)}건 / 중립 {len(unique)-len(reg_passed)-len(sup_passed)}건")
@@ -587,7 +587,7 @@ def save_to_obsidian(title: str, content: str) -> str:
     with open(path, "w", encoding="utf-8") as f:
         f.write(f"---\ntags: [legiscope, 입법레이더, 기사, 자동생성]\ndate: {TODAY}\nstatus: 초안(AI)\n---\n\n")
         f.write(content)
-    print(f"✅ Obsidian 저장: {filename}")
+    print(f"[OK] Obsidian 저장: {filename}")
     return path
 
 
