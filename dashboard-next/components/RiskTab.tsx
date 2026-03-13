@@ -37,11 +37,6 @@ function getRiskBadge(score: number, max: number) {
   return { label: 'Low', bg: '#f0fdf4', text: '#15803d' }
 }
 
-function percentile(arr: number[], p: number) {
-  const sorted = [...arr].sort((a, b) => a - b)
-  return sorted[Math.min(Math.floor(sorted.length * p / 100), sorted.length - 1)] ?? 0
-}
-
 // ── Scatter ───────────────────────────────────────────────
 const ScatterTooltip = ({ active, payload }: any) => {
   if (!active || !payload?.length) return null
@@ -97,19 +92,15 @@ export default function RiskTab({ signals, asOf }: RiskTabProps) {
   })
   const displayList = showAll ? watchList.slice(0, 15) : watchList.slice(0, 4)
 
-  // 매트릭스: risk_score > 0인 산업 + 90th percentile 캡
-  const withRisk = l2.filter(s => (s.risk_score ?? 0) > 0 && (s.recent_90d_bills ?? 0) > 0)
-  const capR = percentile(withRisk.map(s => s.risk_score ?? 0), 90)
-  const capN = percentile(withRisk.map(s => s.recent_90d_bills ?? 0), 90)
-  const inView = withRisk.filter(s => (s.risk_score ?? 0) <= capR && (s.recent_90d_bills ?? 0) <= capN)
-  const excluded = withRisk.filter(s => (s.risk_score ?? 0) > capR || (s.recent_90d_bills ?? 0) > capN)
+  // 매트릭스: risk_score > 0인 산업 전체 표시 (데이터 정화 후 cap 불필요)
+  const withRisk = l2.filter(s => (s.risk_score ?? 0) > 0)
 
-  const xs = inView.map(s => s.risk_score ?? 0).sort((a, b) => a - b)
-  const ys = inView.map(s => s.recent_90d_bills ?? 0).sort((a, b) => a - b)
+  const xs = withRisk.map(s => s.risk_score ?? 0).sort((a, b) => a - b)
+  const ys = withRisk.map(s => s.recent_90d_bills ?? 0).sort((a, b) => a - b)
   const medX = xs[Math.floor(xs.length / 2)] ?? 0
   const medY = ys[Math.floor(ys.length / 2)] ?? 0
 
-  const scatterData = inView.map(s => {
+  const scatterData = withRisk.map(s => {
     const isDanger = (s.risk_score ?? 0) >= medX && (s.recent_90d_bills ?? 0) >= medY
     return { x: s.risk_score ?? 0, y: s.recent_90d_bills ?? 0, z: s.total_bills ?? 0, code: s.ksic_code, danger: isDanger }
   })
@@ -212,13 +203,6 @@ export default function RiskTab({ signals, asOf }: RiskTabProps) {
             <InfoTooltip text={`X축: 누적 규제 위험도(risk_score), Y축: 최근 90일 발의 건수. 오른쪽 위 붉은 구역 = 규제 강도 높고 현재 입법 활동도 활발한 산업. 규제법안 통과 이력이 있는 ${withRisk.length}개 산업 기준.`} />
           </div>
           <div className="px-4 py-3">
-            {excluded.length > 0 && (
-              <div className="mb-2 px-3 py-1.5 rounded text-[10px] text-amber-700 flex items-start gap-1.5"
-                style={{ background: '#fefce8', border: '1px solid #fde68a' }}>
-                <span className="font-medium shrink-0">⚠ 범위 초과 제외:</span>
-                <span className="truncate">{excluded.map(o => getKsicName(o.ksic_code)).join(', ')}</span>
-              </div>
-            )}
             <div className="flex gap-3 mb-1 text-[10px] text-gray-400">
               <span><span className="inline-block w-2 h-2 rounded-sm mr-1 align-middle" style={{ background: '#fee2e2' }} />주목 구역</span>
               <span>● 붉은 = 주목 (상위 5개 이름 표시)</span>
