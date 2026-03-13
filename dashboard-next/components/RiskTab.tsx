@@ -11,6 +11,7 @@ import { getKsicName } from '@/lib/ksic-names'
 interface RiskTabProps {
   signals: IndustrySignal[]
   asOf?: string
+  onDrilldown?: (code: string) => void
 }
 
 // ── 툴팁 컴포넌트 ──────────────────────────────────────────
@@ -75,7 +76,7 @@ function ScatterDot(props: any) {
 }
 
 // ── 메인 컴포넌트 ─────────────────────────────────────────
-export default function RiskTab({ signals, asOf }: RiskTabProps) {
+export default function RiskTab({ signals, asOf, onDrilldown }: RiskTabProps) {
   const [showAll, setShowAll] = useState(false)
 
   const l2 = signals.filter(s => s.ksic_level === 3 && (s.total_bills ?? 0) > 0)
@@ -154,7 +155,8 @@ export default function RiskTab({ signals, asOf }: RiskTabProps) {
                 return (
                   <tr key={s.ksic_code}
                     className="border-b border-gray-100 hover:bg-blue-50/30 transition-colors"
-                    style={{ background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
+                    style={{ background: i % 2 === 0 ? '#fff' : '#fafafa', cursor: onDrilldown ? 'pointer' : 'default' }}
+                    onClick={() => onDrilldown?.(s.ksic_code)}>
                     <td className="px-3 py-2.5 text-gray-400 font-medium">{i + 1}</td>
                     <td className="px-3 py-2.5">
                       <p className="font-medium text-gray-800 text-[11px] leading-snug">{getKsicName(s.ksic_code)}</p>

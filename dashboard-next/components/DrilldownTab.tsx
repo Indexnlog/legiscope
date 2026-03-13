@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabase'
 
 interface DrilldownTabProps {
   signals: IndustrySignal[]
+  initialKsic?: string | null
 }
 
 const PASS_RESULTS = new Set(['원안가결', '수정가결'])
@@ -22,12 +23,16 @@ function getBadgeStyle(type: string | null) {
   return { bg: '#f1f5f9', text: '#64748b' }
 }
 
-export default function DrilldownTab({ signals }: DrilldownTabProps) {
+export default function DrilldownTab({ signals, initialKsic }: DrilldownTabProps) {
   const industries = signals
     .filter(s => s.ksic_level === 3)
     .sort((a, b) => b.total_bills - a.total_bills)
 
-  const [selected, setSelected] = useState(industries[0]?.ksic_code ?? '')
+  const [selected, setSelected] = useState(initialKsic ?? industries[0]?.ksic_code ?? '')
+
+  useEffect(() => {
+    if (initialKsic) setSelected(initialKsic)
+  }, [initialKsic])
   const [bills, setBills] = useState<Bill[]>([])
   const [loading, setLoading] = useState(false)
   const [page, setPage] = useState(0)
@@ -186,9 +191,9 @@ export default function DrilldownTab({ signals }: DrilldownTabProps) {
 
           {/* 법안 목록 테이블 */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-3" style={{ background: '#1B2745' }}>
-              <h3 className="text-sm font-semibold text-white">관련 법안 목록</h3>
-              <span className="text-xs text-blue-200">{bills.length}건 표시</span>
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 bg-gray-50">
+              <h3 className="text-sm font-semibold" style={{ color: '#1B2745' }}>관련 법안 목록</h3>
+              <span className="text-xs text-gray-400">{bills.length}건 표시</span>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-xs bg-white">

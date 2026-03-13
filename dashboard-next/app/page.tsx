@@ -41,17 +41,29 @@ interface OverallStats {
 
 export default function Dashboard() {
   const [tab, setTab] = useState('process')
+  const [drilldownKsic, setDrilldownKsic] = useState<string | null>(null)
   const [signals, setSignals] = useState<IndustrySignal[]>([])
   const [stats, setStats] = useState<OverallStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [asOf, setAsOf] = useState<string>('')
 
+  // URL ?ksic= 파라미터로 드릴다운 자동 이동 (pdeck 연동)
+  useEffect(() => {
+    const k = new URLSearchParams(window.location.search).get('ksic')
+    if (k) { setDrilldownKsic(k); setTab('drilldown') }
+  }, [])
+
   useEffect(() => {
     Promise.all([loadSignals(), loadStats()])
       .catch(e => setError(String(e)))
       .finally(() => setLoading(false))
   }, [])
+
+  function goToDrilldown(code: string) {
+    setDrilldownKsic(code)
+    setTab('drilldown')
+  }
 
   async function loadSignals() {
     // 최신 as_of_date 먼저 확인
@@ -196,8 +208,8 @@ export default function Dashboard() {
           </div>
           <div className="p-4 sm:p-6">
             {tab === 'process' && stats && <ProcessTab stats={stats} />}
-            {tab === 'risk' && <RiskTab signals={signals} asOf={asOf} />}
-            {tab === 'drilldown' && <DrilldownTab signals={signals} />}
+            {tab === 'risk' && <RiskTab signals={signals} asOf={asOf} onDrilldown={goToDrilldown} />}
+            {tab === 'drilldown' && <DrilldownTab signals={signals} initialKsic={drilldownKsic} />}
           </div>
         </div>
       </main>
