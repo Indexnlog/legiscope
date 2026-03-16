@@ -19,9 +19,9 @@ def is_skip(bill_name: str) -> bool:
 
 
 def tag_bill(bill_name: str) -> list[str]:
-    """법안명에서 KSIC 코드 추출. SKIP 대상이면 빈 리스트 반환"""
+    """법안명에서 KSIC 코드 추출. SKIP 대상이면 ['SKIP'] 반환"""
     if is_skip(bill_name):
-        return []
+        return ["SKIP"]
     matched = set()
     for keyword, codes in KEYWORD_TO_KSIC.items():
         if keyword in bill_name:
@@ -62,7 +62,7 @@ def apply_to_all():
         if hasattr(r, "error") and r.error:
             print(f"  [오류] page {page}: {r.error}")
 
-        tagged += sum(1 for u in updates if u["ksic_codes"])
+        tagged += sum(1 for u in updates if u["ksic_codes"] and u["ksic_codes"] != ["SKIP"])
         total += len(rows)
         print(f"처리: {total}건 | KSIC 매칭: {tagged}건 | SKIP: {skipped}건")
         page += 1
@@ -70,7 +70,7 @@ def apply_to_all():
     truly_unmapped = total - tagged - skipped
     print(f"\n완료: 전체 {total}건")
     print(f"  태깅됨      : {tagged}건 ({tagged/total*100:.1f}%)")
-    print(f"  의도적 SKIP : {skipped}건 ({skipped/total*100:.1f}%) - 세제/선거/행정/사법/노동")
+    print(f"  의도적 SKIP : {skipped}건 ({skipped/total*100:.1f}%) - 세제/선거/행정/사법/노동/보훈/치안")
     print(f"  진짜 미매핑 : {truly_unmapped}건 ({truly_unmapped/total*100:.1f}%) - 개선 여지")
 
 

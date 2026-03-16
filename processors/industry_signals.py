@@ -67,7 +67,7 @@ def compute_signals(bills: list[dict], ksic_level: int = 3) -> list[dict]:
 
     for bill in bills:
         codes = bill.get("ksic_codes") or []
-        if not codes:
+        if not codes or codes == ["SKIP"]:
             continue
 
         # KSIC 코드를 지정 레벨로 자름
