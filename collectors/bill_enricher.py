@@ -80,7 +80,8 @@ def enrich_bills(limit: int = 200, bill_ids: list[str] | None = None):
 
         time.sleep(0.5)  # 서버 부하 방지
 
-    print(f"\n완료: 성공 {success}건 / 실패 {fail}건")
+    print(f"\n완료: 성공 {success}건 / 내용없음 {fail}건")
+    return success, fail
 
 
 if __name__ == "__main__":
@@ -103,4 +104,23 @@ if __name__ == "__main__":
         print(f"테스트 대상: {len(test_ids)}건 (약사법)")
         enrich_bills(bill_ids=test_ids)
     else:
-        enrich_bills(limit=args.limit)
+        success, fail = enrich_bills(limit=args.limit)
+
+        # 완료 시 Slack 알림
+        try:
+            from utils.slack import SlackNotifier
+            notifier = SlackNotifier()
+            notifier.channel_id = "C070BNYBTQ9"  # 개발/알림 채널
+            # 현재 전체 채워진 비율 조회
+            db = get_client()
+            total = db.table("bills").select("bill_id", count="exact").execute().count
+            filled = db.table("bills").select("bill_id", count="exact").not_.is_("proposal_reason", "null").execute().count
+            pct = filled / total * 100 if total else 0
+            msg = (
+                f"[bill_enricher 완료]\n"
+                f"이번 실행: 수집 {success}건 / 내용없음 {fail}건\n"
+                f"proposal_reason 현황: {filled:,}/{total:,} ({pct:.1f}%)"
+            )
+            notifier.send(msg)
+        except Exception as e:
+            print(f"[WARN] Slack 알림 실패: {e}")
