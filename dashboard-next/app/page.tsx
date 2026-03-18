@@ -6,11 +6,13 @@ import type { IndustrySignal } from '@/lib/types'
 import ProcessTab from '@/components/ProcessTab'
 import RiskTab from '@/components/RiskTab'
 import DrilldownTab from '@/components/DrilldownTab'
+import CompanyTab from '@/components/CompanyTab'
 
 const TABS = [
   { id: 'process', label: '① 입법 프로세스 이해', icon: '📚' },
   { id: 'risk', label: '② 산업별 리스크 현황', icon: '📊' },
   { id: 'drilldown', label: '③ 산업 드릴다운', icon: '🔍' },
+  { id: 'company', label: '④ 기업별 조회', icon: '🏢' },
 ]
 
 interface TabMeta { desc: string; pdeck?: string }
@@ -25,6 +27,10 @@ const TAB_META: Record<string, TabMeta> = {
   drilldown: {
     desc: '산업(KSIC 중분류)을 선택해 관련 법안 목록, 규제 유형 분포, 연도별 발의 추이를 상세히 확인합니다. 특정 업종의 규제 리스크를 심층 분석할 때 사용합니다.',
     pdeck: '기업정보 > 산업정보 > Macro/Alt Data 최상단',
+  },
+  company: {
+    desc: '기업명과 KSIC 코드를 입력해 해당 기업이 속한 산업의 입법 리스크를 조회합니다. pdeck 기업정보 페이지에서 KSIC 코드가 자동 주입됩니다.',
+    pdeck: '기업정보 > 산업정보 > 규제리스크',
   },
 }
 
@@ -210,6 +216,7 @@ export default function Dashboard() {
             {tab === 'process' && stats && <ProcessTab stats={stats} />}
             {tab === 'risk' && <RiskTab signals={signals} asOf={asOf} onDrilldown={goToDrilldown} />}
             {tab === 'drilldown' && <DrilldownTab signals={signals} initialKsic={drilldownKsic} />}
+            {tab === 'company' && <CompanyTab signals={signals} />}
           </div>
         </div>
       </main>

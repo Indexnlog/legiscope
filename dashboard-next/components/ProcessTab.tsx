@@ -28,18 +28,20 @@ const STAGES = [
   { label: '계류 중', key: 'pending', icon: '⏳', desc: '아직 처리되지 않고 심사 중인 법안' },
 ]
 
-// 입법 절차 흐름 — Legiscope 데이터 수집 여부 표시
-const FLOW_STEPS = [
-  { label: '정부·의원\n입법예고', hasData: true, count: '229건', note: '정부입법지원센터' },
-  { label: '법률안\n발의', hasData: true, count: '42,736건', note: '국회 OpenAPI' },
-  { label: '소관\n상임위 접수', hasData: false },
-  { label: '상임위\n법안심사소위', hasData: false },
-  { label: '상임위\n전체회의', hasData: true, count: '11,774건', note: '국회 OpenAPI' },
-  { label: '법제사법\n위원회', hasData: false },
-  { label: '본회의\n심의·의결', hasData: true, count: '4,058건 가결', note: '국회 OpenAPI' },
-  { label: '정부\n이송', hasData: false },
-  { label: '대통령\n공포', hasData: true, count: '6,640건', note: '법제처 DRF' },
-]
+// 입법 절차 흐름 — stats 기반 동적 수치
+function buildFlowSteps(stats: ProcessTabProps['stats']) {
+  return [
+    { label: '정부·의원\n입법예고', hasData: true, count: null as string | null, note: '정부입법지원센터' },
+    { label: '법률안\n발의', hasData: true, count: `${stats.bills.toLocaleString()}건`, note: '국회 OpenAPI' },
+    { label: '소관\n상임위 접수', hasData: false, count: null, note: undefined },
+    { label: '상임위\n법안심사소위', hasData: false, count: null, note: undefined },
+    { label: '상임위\n전체회의', hasData: true, count: `${stats.committee_reviewed.toLocaleString()}건`, note: '국회 OpenAPI' },
+    { label: '법제사법\n위원회', hasData: false, count: null, note: undefined },
+    { label: '본회의\n심의·의결', hasData: true, count: `${stats.passed.toLocaleString()}건 가결`, note: '국회 OpenAPI' },
+    { label: '정부\n이송', hasData: false, count: null, note: undefined },
+    { label: '대통령\n공포', hasData: true, count: `${stats.promulgated.toLocaleString()}건`, note: '법제처 DRF' },
+  ]
+}
 
 const TERM_GLOSSARY = [
   { term: '입법예고', def: '법안을 발의하기 전에 국민의 의견을 수렴하는 절차. 공표 후 20일 이상 의견 접수.' },
@@ -52,6 +54,8 @@ const TERM_GLOSSARY = [
 ]
 
 export default function ProcessTab({ stats }: ProcessTabProps) {
+  const FLOW_STEPS = buildFlowSteps(stats)
+
   const funnelData = [
     { name: '발의', value: stats.bills },
     { name: '상임위 심사', value: stats.committee_reviewed },
