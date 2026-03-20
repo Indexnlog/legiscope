@@ -4,6 +4,7 @@
 
 실행: PYTHONPATH=. python article_daily.py
      PYTHONPATH=. python article_daily.py --slack --draft
+     (초안은 article_weekly와 동일: ARTICLE_LLM_PROVIDER / GEMINI_API_KEY·ANTHROPIC_API_KEY)
 """
 import sys
 import argparse
@@ -13,6 +14,11 @@ from datetime import date, timedelta
 from collections import defaultdict
 from db.client import get_client
 from dotenv import load_dotenv
+from article_weekly import (
+    build_weekly_trigger_whitelist,
+    generate_article_draft,
+    resolve_article_llm_provider,
+)
 
 load_dotenv()
 sys.stdout.reconfigure(encoding="utf-8")
@@ -143,37 +149,48 @@ def build_brief(triggers, passed_total, proposed_total):
     return "\n".join(lines)
 
 
-def generate_draft_claude(trigger_summary: str, trigger_type: str) -> str:
-    api_key = os.getenv("ANTHROPIC_API_KEY", "")
-    if not api_key or api_key.startswith("여기에"):
-        return "[ANTHROPIC_API_KEY 미설정]"
-    try:
-        import anthropic
-        client = anthropic.Anthropic(api_key=api_key)
-        prompt = f"""당신은 경제 전문 기자입니다. 아래 국회 입법 데이터를 바탕으로 경제지 기사 초안을 작성하세요.
+def _daily_source_facts_and_whitelist(top: dict) -> tuple[str, frozenset[str]]:
+    """트리거별 법안 행 + DB 상세로 SOURCE_FACTS 문자열·화이트리스트 구성."""
+    bills = (top.get("data") or [])[:12]
+    ids = [b["bill_id"] for b in bills if b.get("bill_id")]
+    detail_by_id: dict = {}
+    if ids:
+        try:
+            db = get_client()
+            rows = (
+                db.table("bills")
+                .select(
+                    "bill_id,bill_name,propose_dt,proc_dt,proposer,rst_proposer,"
+                    "proposer_kind,proposer_members,committee,proposal_reason"
+                )
+                .in_("bill_id", ids)
+                .execute()
+                .data
+            )
+            detail_by_id = {r["bill_id"]: r for r in (rows or [])}
+        except Exception:
+            detail_by_id = {}
 
-트리거: {trigger_type}
-데이터:
-{trigger_summary}
+    lines = [f"[일간 트리거] {top['type']}", ""]
+    lines.extend(top.get("lines") or [])
+    lines.append("")
+    for b in bills:
+        bid = b.get("bill_id")
+        d = detail_by_id.get(bid, {}) if bid else {}
+        nm = b.get("bill_name") or ""
+        dt = (b.get("proc_dt") or b.get("propose_dt") or "")[:16]
+        cm = d.get("committee") or b.get("committee") or ""
+        lines.append(f"- {nm} ({dt}, {cm})")
+        pr = (d.get("proposer") or b.get("proposer") or "").strip()
+        if pr:
+            lines.append(f"  발의: {pr[:220]}")
+        reason = (d.get("proposal_reason") or "").strip()
+        if reason:
+            lines.append(f"  제안이유: {reason[:400].replace(chr(10), ' ')}")
 
-요구사항:
-- 경제지 독자(기업인·투자자) 대상
-- 제목은 "[Legiscope] 제목내용" 형식 (대괄호 태그를 제목과 같은 줄에)
-- 부제 1개 (제목 바로 다음 줄)
-- 본문 400~600자
-- 실제 법안명 인용 (법안명은 「」로 감쌀 것)
-- 핵심 수치, 법안명, 중요 키워드는 **볼드** 처리
-- 기업 대응 방향으로 마무리
-- 말미: "이 기사는 News Epoch가 구축한 입법 추적 엔진 Legiscope를 기반으로 작성됐습니다."
-- 한국어"""
-        msg = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=1024,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return msg.content[0].text
-    except Exception as e:
-        return f"[Claude API 오류: {e}]"
+    key_data = "\n".join(lines)
+    wl = build_weekly_trigger_whitelist(bills, detail_by_id if detail_by_id else None)
+    return key_data, wl
 
 
 def save_to_obsidian(title: str, content: str):
@@ -193,7 +210,11 @@ def save_to_obsidian(title: str, content: str):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--slack", action="store_true", help="Slack 전송")
-    parser.add_argument("--draft", action="store_true", help="Claude API 초안 생성")
+    parser.add_argument(
+        "--draft",
+        action="store_true",
+        help="기사 초안 (주간과 동일 LLM·팩트 가드, 기본 Gemini)",
+    )
     args = parser.parse_args()
 
     print(f"[{TODAY}] 일간 트리거 감지 중... (기준일: {YESTERDAY_STR})")
@@ -221,12 +242,15 @@ def main():
         from utils.slack import SlackNotifier
         SlackNotifier().send(f"[●] *입법 레이더 일간 브리프* ({YESTERDAY_STR})\n\n```{brief}```")
 
-    # 가장 강한 트리거로 초안 생성
+    # 가장 강한 트리거로 초안 생성 (article_weekly와 동일 파이프라인)
     if args.draft:
         top = triggers[0]
-        key_data = "\n".join(top["lines"])
-        print(f"\n📝 Claude API 초안 생성 중... ({top['type']})")
-        draft = generate_draft_claude(key_data, top["type"])
+        key_data, name_wl = _daily_source_facts_and_whitelist(top)
+        llm = resolve_article_llm_provider()
+        print(f"\n📝 기사 초안 생성 중 ({llm}, {top['type']})...")
+        draft = generate_article_draft(
+            key_data, top["type"], name_whitelist=name_wl
+        )
         print("\n" + "=" * 65)
         print(draft)
         print("=" * 65)
