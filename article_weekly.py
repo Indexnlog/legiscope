@@ -12,6 +12,7 @@
      PYTHONPATH=. python article_weekly.py --sector 제조업
 """
 import csv
+import re
 import sys
 import argparse
 import io
@@ -105,18 +106,217 @@ def _scan_draft_for_external_markers(draft: str, source_facts: str) -> list[str]
     return out
 
 
-def _apply_draft_fact_guard(draft: str, source_facts: str) -> str:
-    """환각 의심 키워드를 잡아 편집자 경고를 붙임(자동 삭제는 사실 오탐 위험으로 하지 않음)."""
-    bad = _scan_draft_for_external_markers(draft, source_facts)
-    if not bad:
+def _apply_draft_fact_guard(
+    draft: str,
+    source_facts: str,
+    *,
+    name_whitelist: frozenset[str] | None = None,
+) -> str:
+    """외부 배경 마커 + (선택) 의원·법안 화이트리스트 위반 시 편집자 경고."""
+    chunks: list[str] = []
+    ext = _scan_draft_for_external_markers(draft, source_facts)
+    if ext:
+        chunks.append(
+            "다음 표현은 SOURCE_FACTS에 없습니다(환각 가능): " + ", ".join(ext)
+        )
+    if name_whitelist:
+        wl = _scan_draft_whitelist_violations(draft, source_facts, name_whitelist)
+        if wl:
+            chunks.append(
+                "화이트리스트 밖 고유명사·패턴(트리거 key_data 기준): " + "; ".join(wl)
+            )
+    if not chunks:
         return draft
-    note = (
-        "\n\n---\n[Legiscope 자동 검사] 아래 표현이 이번 입력 데이터(SOURCE_FACTS)에 없습니다. "
-        "환각 가능성이 있으니 삭제·수정 후 사용하세요: "
-        + ", ".join(bad)
+    return (
+        draft.rstrip()
+        + "\n\n---\n[Legiscope 자동 검사]\n"
+        + "\n".join(chunks)
         + "\n---"
     )
-    return draft.rstrip() + note
+
+
+# 초안에서 기업·기관명으로 자주 지어내는 접미 패턴 (SOURCE_FACTS에 없으면 경고)
+_ORG_LIKE_SUFFIXES = (
+    "전자",
+    "홀딩스",
+    "홀딩",
+    "증권",
+    "은행",
+    "화학",
+    "통신",
+    "그룹",
+    "라이프",
+    "케미칼",
+    "바이오",
+    "제약",
+    "케이블",
+)
+
+
+def _bill_name_aliases(bill_name: str) -> set[str]:
+    """법안명 전체 + 짧은 호칭(공직선거법 등)."""
+    s = (bill_name or "").strip()
+    if not s:
+        return set()
+    out: set[str] = {s}
+    t = s.replace("「", "").replace("」", "").strip()
+    if t:
+        out.add(t)
+    for suf in (
+        " 일부개정법률안",
+        " 일부개정법률",
+        " 법률안",
+        " 법률",
+        " 제정법률안",
+        " 제정법률",
+    ):
+        if s.endswith(suf):
+            out.add(s[: -len(suf)].strip())
+    return {x for x in out if len(x) >= 2}
+
+
+def _proposer_to_person_names(proposer: str) -> set[str]:
+    """발의자 문자열에서 2~4글자 한글 덩어리(의원 성명 후보)."""
+    if not proposer:
+        return set()
+    s = re.sub(r"[0-9a-zA-Z]+", " ", proposer)
+    names: set[str] = set()
+    for raw in re.split(r"[\s·,/，、]+", s):
+        p = raw.strip()
+        for suf in ("의원", "등", "외", "대표", "발의"):
+            if p.endswith(suf) and len(p) > len(suf):
+                p = p[: -len(suf)]
+        if re.fullmatch(r"[가-힣]{2,4}", p):
+            names.add(p)
+    return names
+
+
+def build_sector_whitelist_from_db_text(db_data: str) -> frozenset[str]:
+    """섹터 프롬프트 본문에서 `- 법안명 (` 형태 줄만 뽑아 별칭 화이트리스트."""
+    wl: set[str] = set()
+    for m in re.finditer(r"^-\s*(.+?)\s*\(", db_data, re.MULTILINE):
+        wl.update(_bill_name_aliases(m.group(1).strip()))
+    return frozenset(wl)
+
+
+def build_weekly_trigger_whitelist(
+    bill_rows: list[dict],
+    detail_by_bill_id: dict | None = None,
+    extra_phrases: tuple[str, ...] | None = None,
+) -> frozenset[str]:
+    """
+    트리거용 key_data에 넣은 법안·DB 상세와 동일한 범위의 화이트리스트.
+    bill_rows: passed[:3] | first_group[:8] | intl의 bill | moved[:3] 등.
+    """
+    wl: set[str] = set()
+    detail_by_bill_id = detail_by_bill_id or {}
+    for b in bill_rows:
+        if not b:
+            continue
+        bn = (b.get("bill_name") or "").strip()
+        wl.update(_bill_name_aliases(bn))
+        cm = (b.get("committee") or "").strip()
+        if cm:
+            wl.add(cm)
+        bid = b.get("bill_id")
+        det = detail_by_bill_id.get(bid) if bid else None
+        prop = ""
+        if isinstance(det, dict):
+            prop = (det.get("proposer") or "").strip()
+            cm2 = (det.get("committee") or "").strip()
+            if cm2:
+                wl.add(cm2)
+        if not prop:
+            prop = (b.get("proposer") or "").strip()
+        if prop:
+            wl.add(prop)
+            wl.update(_proposer_to_person_names(prop))
+    if extra_phrases:
+        for x in extra_phrases:
+            t = (x or "").strip()
+            if len(t) >= 2:
+                wl.add(t)
+    return frozenset(x for x in wl if x and len(x) >= 2)
+
+
+def _whitelist_allows_phrase(phrase: str, source_facts: str, whitelist: frozenset[str]) -> bool:
+    """phrase가 SOURCE_FACTS 부분문자열이거나 화이트리스트 항목과 겹치면 허용."""
+    if not phrase or len(phrase) < 2:
+        return True
+    if phrase in source_facts:
+        return True
+    for w in whitelist:
+        if len(w) < 2:
+            continue
+        if phrase == w:
+            return True
+        if len(w) >= 3 and phrase in w:
+            return True
+        if len(phrase) >= 4 and w in phrase:
+            return True
+    return False
+
+
+def _strip_md_for_scan(text: str) -> str:
+    return re.sub(r"[*_#`]+", "", text)
+
+
+def _scan_draft_whitelist_violations(
+    draft: str, source_facts: str, whitelist: frozenset[str]
+) -> list[str]:
+    """의원명 패턴, 「」 법안명, 기업형 접미어, 3글자 고유명사(휴리스틱) 검사."""
+    plain = _strip_md_for_scan(draft)
+    seen: set[str] = set()
+    out: list[str] = []
+
+    # 1) ○○의원 / ○○ 의원 (국회의원 등 오탐 제외)
+    skip_before_uwon = frozenset(
+        ("국회", "지방", "시의", "도의", "기초", "광역", "교육", "전문", "상임", "법률", "개정", "일부")
+    )
+    for rx in (r"([가-힣]{2,4})의원", r"([가-힣]{2,4})\s+의원"):
+        for m in re.finditer(rx, plain):
+            name = m.group(1)
+            if name in skip_before_uwon:
+                continue
+            if _whitelist_allows_phrase(name, source_facts, whitelist):
+                continue
+            key = f"u:{name}"
+            if key not in seen:
+                seen.add(key)
+                out.append(f"의원명·의원 패턴: {name}")
+
+    # 2) 「...」 인용 — 법안명이 데이터·화이트리스트와 연결되는지
+    for m in re.finditer(r"「([^」]{3,120})」", plain):
+        inner = m.group(1).strip()
+        if _whitelist_allows_phrase(inner, source_facts, whitelist):
+            continue
+        # 짧은 조각이라도 법안 별칭과 겹치면 허용
+        ok = False
+        for w in whitelist:
+            if len(w) < 4:
+                continue
+            if inner in w or w in inner:
+                ok = True
+                break
+        if ok:
+            continue
+        key = f"b:{inner[:40]}"
+        if key not in seen:
+            seen.add(key)
+            out.append(f'법안명 인용: 「{inner[:50]}…」' if len(inner) > 50 else f"법안명 인용: 「{inner}」")
+
+    # 3) 기업·지주형 이름 (…전자, …증권 등)
+    org_pat = r"[가-힣]{2,12}(?:" + "|".join(re.escape(s) for s in _ORG_LIKE_SUFFIXES) + ")"
+    for m in re.finditer(org_pat, plain):
+        span = m.group(0)
+        if _whitelist_allows_phrase(span, source_facts, whitelist):
+            continue
+        key = f"o:{span}"
+        if key not in seen:
+            seen.add(key)
+            out.append(f"기업·기관형 명칭: {span}")
+
+    return out
 
 
 def _strip_yaml_frontmatter(md: str) -> str:
@@ -703,10 +903,17 @@ def generate_sector_article(sector_name: str) -> str:
     raw = _generate_article_completion(
         prompt, max_tokens_claude=4096, max_tokens_gemini=8192
     )
-    return _apply_draft_fact_guard(raw, db_data)
+    sec_wl = build_sector_whitelist_from_db_text(db_data)
+    wl_opt = sec_wl if len(sec_wl) >= 2 else None
+    return _apply_draft_fact_guard(raw, db_data, name_whitelist=wl_opt)
 
 
-def generate_draft_gemini(trigger_summary: str, trigger_type: str) -> str:
+def generate_draft_gemini(
+    trigger_summary: str,
+    trigger_type: str,
+    *,
+    name_whitelist: frozenset[str] | None = None,
+) -> str:
     """Gemini API로 주간 트리거 기사 초안."""
     if not GEMINI_API_KEY:
         return "[GEMINI_API_KEY 미설정 — Google AI Studio에서 발급 후 .env에 추가]"
@@ -727,12 +934,21 @@ def generate_draft_gemini(trigger_summary: str, trigger_type: str) -> str:
                 temperature=0.15,
             ),
         )
-        return _apply_draft_fact_guard(_gemini_response_text(response), trigger_summary)
+        return _apply_draft_fact_guard(
+            _gemini_response_text(response),
+            trigger_summary,
+            name_whitelist=name_whitelist or None,
+        )
     except Exception as e:
         return f"[Gemini API 오류: {e}]"
 
 
-def generate_draft_claude(trigger_summary: str, trigger_type: str) -> str:
+def generate_draft_claude(
+    trigger_summary: str,
+    trigger_type: str,
+    *,
+    name_whitelist: frozenset[str] | None = None,
+) -> str:
     """Claude API로 주간 트리거 기사 초안."""
     if not ANTHROPIC_API_KEY or (ANTHROPIC_API_KEY or "").startswith("여기에"):
         return "[ANTHROPIC_API_KEY 미설정 — .env에 키 추가 필요]"
@@ -748,16 +964,29 @@ def generate_draft_claude(trigger_summary: str, trigger_type: str) -> str:
             system=_LEGISCOPE_FACT_SYSTEM,
             messages=[{"role": "user", "content": prompt}],
         )
-        return _apply_draft_fact_guard(msg.content[0].text, trigger_summary)
+        return _apply_draft_fact_guard(
+            msg.content[0].text,
+            trigger_summary,
+            name_whitelist=name_whitelist or None,
+        )
     except Exception as e:
         return f"[Claude API 오류: {e}]"
 
 
-def generate_article_draft(trigger_summary: str, trigger_type: str) -> str:
+def generate_article_draft(
+    trigger_summary: str,
+    trigger_type: str,
+    *,
+    name_whitelist: frozenset[str] | None = None,
+) -> str:
     """주간 트리거 기사 초안 — resolve_article_llm_provider()에 따라 Gemini 또는 Claude."""
     if resolve_article_llm_provider() == "claude":
-        return generate_draft_claude(trigger_summary, trigger_type)
-    return generate_draft_gemini(trigger_summary, trigger_type)
+        return generate_draft_claude(
+            trigger_summary, trigger_type, name_whitelist=name_whitelist
+        )
+    return generate_draft_gemini(
+        trigger_summary, trigger_type, name_whitelist=name_whitelist
+    )
 
 
 def _generate_article_completion(
@@ -879,45 +1108,121 @@ def main():
         if args.draft and has_triggers:
             # 가장 강한 트리거 선택해서 초안 생성
             file_label = ""  # Obsidian 파일명용 레이블
+            slice_bills: list[dict] = []
+            detail_by_id: dict = {}
+            extra_phrases: tuple[str, ...] = ()
+
             if passed:
                 trigger_type = "규제 법안 가결"
-                key_data = "\n".join([f"- {b['bill_name']} ({b['proc_result_cd']}, {b['proc_dt']})" for b in passed[:3]])
+                slice_bills = passed[:3]
+                key_data = "\n".join(
+                    [
+                        f"- {b['bill_name']} ({b['proc_result_cd']}, {b['proc_dt']})"
+                        for b in slice_bills
+                    ]
+                )
                 file_label = passed[0]["bill_name"][:15]
+                try:
+                    db = get_client()
+                    pids = [b["bill_id"] for b in slice_bills if b.get("bill_id")]
+                    if pids:
+                        rows = (
+                            db.table("bills")
+                            .select("bill_id,proposer,committee")
+                            .in_("bill_id", pids)
+                            .execute()
+                            .data
+                        )
+                        detail_by_id = {r["bill_id"]: r for r in (rows or [])}
+                except Exception:
+                    detail_by_id = {}
+
             elif clusters:
                 trigger_type = "동일 이슈 집중 발의"
                 first_key, first_group = list(clusters.items())[0]
                 file_label = first_key[:15]  # 예: "약사법", "정보통신망"
                 ind = industry_name(first_group[0]["ksic_code"])
+                slice_bills = list(first_group[:8])
                 key_data = f"[{ind}] '{first_key}…' 관련 법안 {len(first_group)}건 집중 발의\n"
-                # DB에서 proposal_reason 조회
                 try:
                     db = get_client()
-                    bill_ids = [b["bill_id"] for b in first_group[:8] if b.get("bill_id")]
+                    bill_ids = [b["bill_id"] for b in slice_bills if b.get("bill_id")]
                     if bill_ids:
-                        detail_rows = db.table("bills").select("bill_id,bill_name,propose_dt,proposer,committee,proposal_reason").in_("bill_id", bill_ids).execute().data
-                        detail_map = {r["bill_id"]: r for r in detail_rows}
-                        for b in first_group[:8]:
-                            detail = detail_map.get(b.get("bill_id"), {})
+                        detail_rows = (
+                            db.table("bills")
+                            .select(
+                                "bill_id,bill_name,propose_dt,proposer,committee,proposal_reason"
+                            )
+                            .in_("bill_id", bill_ids)
+                            .execute()
+                            .data
+                        )
+                        detail_by_id = {r["bill_id"]: r for r in (detail_rows or [])}
+                        for b in slice_bills:
+                            detail = detail_by_id.get(b.get("bill_id"), {})
                             reason = detail.get("proposal_reason") or ""
-                            reason_summary = reason[:300].replace("\n", " ") if reason else "제안이유 미수집"
+                            reason_summary = (
+                                reason[:300].replace("\n", " ") if reason else "제안이유 미수집"
+                            )
                             committee = detail.get("committee") or b.get("committee", "")
-                            key_data += f"- {b['bill_name']} ({b['propose_dt']}, {detail.get('proposer', '')})\n  소관위원회: {committee}\n  제안이유: {reason_summary}\n"
+                            key_data += (
+                                f"- {b['bill_name']} ({b['propose_dt']}, {detail.get('proposer', '')})\n"
+                                f"  소관위원회: {committee}\n"
+                                f"  제안이유: {reason_summary}\n"
+                            )
                     else:
-                        key_data += "\n".join([f"- {b['bill_name']} ({b['propose_dt']})" for b in first_group[:5]])
+                        key_data += "\n".join(
+                            [f"- {b['bill_name']} ({b['propose_dt']})" for b in first_group[:5]]
+                        )
                 except Exception:
-                    key_data += "\n".join([f"- {b['bill_name']} ({b['propose_dt']})" for b in first_group[:5]])
+                    key_data += "\n".join(
+                        [f"- {b['bill_name']} ({b['propose_dt']})" for b in first_group[:5]]
+                    )
+
             elif intl:
                 trigger_type = "국제 규제 연동 법안"
-                key_data = "\n".join([f"- {b['bill_name']} [참조: {ref}]" for b, ref in intl[:3]])
+                slice_bills = [b for b, _ in intl[:3]]
+                extra_phrases = tuple(ref for _, ref in intl[:3])
+                key_data = "\n".join(
+                    [f"- {b['bill_name']} [참조: {ref}]" for b, ref in intl[:3]]
+                )
                 file_label = intl[0][0]["bill_name"][:15]
             else:
                 trigger_type = "계류 규제법안 심사 진전"
-                key_data = "\n".join([f"- {b['bill_name']} ({b.get('committee_result','')})" for b in moved[:3]])
+                slice_bills = moved[:3]
+                key_data = "\n".join(
+                    [
+                        f"- {b['bill_name']} ({b.get('committee_result', '')})"
+                        for b in slice_bills
+                    ]
+                )
                 file_label = moved[0]["bill_name"][:15]
+                try:
+                    db = get_client()
+                    mids = [b["bill_id"] for b in slice_bills if b.get("bill_id")]
+                    if mids:
+                        rows = (
+                            db.table("bills")
+                            .select("bill_id,proposer,committee")
+                            .in_("bill_id", mids)
+                            .execute()
+                            .data
+                        )
+                        detail_by_id = {r["bill_id"]: r for r in (rows or [])}
+                except Exception:
+                    detail_by_id = {}
+
+            name_whitelist = build_weekly_trigger_whitelist(
+                slice_bills,
+                detail_by_id if detail_by_id else None,
+                extra_phrases=extra_phrases if extra_phrases else None,
+            )
 
             llm = resolve_article_llm_provider()
             print(f"\n📝 기사 초안 생성 중 ({llm}, {trigger_type})...")
-            draft = generate_article_draft(key_data, trigger_type)
+            draft = generate_article_draft(
+                key_data, trigger_type, name_whitelist=name_whitelist
+            )
             print("\n" + "=" * 65)
             print(draft)
             print("=" * 65)
