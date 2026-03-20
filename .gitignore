@@ -1,5 +1,7 @@
 .env
 .streamlit/secrets.toml
+# Local Cursor/Claude command snippets — not shared with team
+.claude/
 __pycache__/
 *.pyc
 data/raw/
