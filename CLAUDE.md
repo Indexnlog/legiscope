@@ -40,6 +40,7 @@ python run_weekly.py
 - At end of day: git push, then update Obsidian `작업일지`, and update timeline or project overview if status changed.
 
 ## Related Docs
+- `docs/project_map.md` (로컬 · GitHub · Obsidian 한눈에)
 - `docs/architecture.md`
 - `docs/pipeline.md`
 - `docs/operations.md`

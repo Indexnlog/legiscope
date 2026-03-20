@@ -5,5 +5,7 @@ __pycache__/
 data/raw/
 *.db
 .venv/
-output/logs/
+# Generated runs, logs, ad hoc exports — not repo truth (see docs/architecture.md)
+output/
 debug_*.txt
+*.bak
