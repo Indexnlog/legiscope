@@ -54,6 +54,11 @@ legiscope/
 
 `run_weekly.py` → 수집 → DB 반영 → KSIC/규제 → `industry_signals` → CSV/export · (선택) enricher.
 
+## 기사 초안 · NEWS EPOCH 지침
+
+- `article_weekly.py`는 가능하면 Obsidian `NEWS EPOCH 작성 지침.md`를 읽어 프롬프트에 붙입니다.
+- 경로: `NEWS_EPOCH_GUIDELINE_PATH`(.env) → 없으면 `config.py`의 Dropbox 기본 경로(파일 있을 때만).
+
 ## 상세 문서
 
 - [architecture.md](./architecture.md) · [pipeline.md](./pipeline.md) · [operations.md](./operations.md) · 루트 [CLAUDE.md](../CLAUDE.md)

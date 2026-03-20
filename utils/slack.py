@@ -124,7 +124,7 @@ def send_weekly_brief(has_triggers: bool, trigger_summary: str, date_str: str) -
 
 
 def send_article_draft(title: str, draft: str, date_str: str) -> bool:
-    """기사 초안 — 헤더 + 제목, 본문은 길면 스레드로 이어서 전송 (3000자 절단 제거)."""
+    """기사 초안 — 헤더·제목은 mrkdwn, 본문은 코드 펜스(슬랙에서 ** 등 포맷 깨짐 방지). 길면 스레드 연속."""
     notifier = SlackNotifier()
 
     fallback = f"입법 레이더 기사 초안 ({date_str}) — {title}"
@@ -144,11 +144,11 @@ def send_article_draft(title: str, draft: str, date_str: str) -> bool:
         {"type": "divider"},
     ]
 
-    chunks = _chunk_text(draft.strip(), _MRDKWN_CHUNK)
+    chunks = _chunk_text(draft.strip(), _MRDKWN_CHUNK - 8)
     if not chunks:
         chunks = ["(본문 없음)"]
 
-    first_body = _slack_escape_mrkdwn(chunks[0])
+    first_body = _fence_code(chunks[0])
     blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": first_body}})
 
     resp = notifier.post_message(text=fallback, blocks=blocks)
@@ -159,7 +159,7 @@ def send_article_draft(title: str, draft: str, date_str: str) -> bool:
 
     thread_ts = resp.get("ts")
     for extra in chunks[1:]:
-        body = _slack_escape_mrkdwn(extra)
+        body = _fence_code(extra)
         notifier.post_message(
             text=f"(계속) {title[:80]}",
             blocks=[

@@ -1,4 +1,6 @@
 import os
+from pathlib import Path
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -28,6 +30,21 @@ GEMINI_API_KEY = _get("GEMINI_API_KEY")
 GEMINI_MODEL = _get("GEMINI_MODEL") or "gemini-2.5-flash"
 ANTHROPIC_API_KEY = _get("ANTHROPIC_API_KEY")
 CLAUDE_ARTICLE_MODEL = _get("CLAUDE_ARTICLE_MODEL") or "claude-sonnet-4-6"
+
+# NEWS EPOCH Obsidian 작성 지침 (.md). 미설정 시 아래 경로에 파일이 있으면 자동 로드.
+NEWS_EPOCH_GUIDELINE_PATH = _get("NEWS_EPOCH_GUIDELINE_PATH")
+_DEFAULT_NEWS_EPOCH_GUIDE = Path(
+    r"C:\Users\ekapr\Dropbox\앱\remotely-save\Second_Brain\20_Projects_Builder"
+    r"\21_NEWS EPOCH\NEWS EPOCH 작성 지침.md"
+)
+
+
+def resolve_news_epoch_guideline_path() -> Path | None:
+    if NEWS_EPOCH_GUIDELINE_PATH:
+        p = Path(NEWS_EPOCH_GUIDELINE_PATH)
+        return p if p.is_file() else None
+    return _DEFAULT_NEWS_EPOCH_GUIDE if _DEFAULT_NEWS_EPOCH_GUIDE.is_file() else None
+
 
 # 공공데이터포털 OpenAPI 엔드포인트
 BILL_LIST_URL = "https://open.assembly.go.kr/portal/openapi/TVBPMBILL11"

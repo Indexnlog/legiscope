@@ -24,6 +24,7 @@ from config import (
     CLAUDE_ARTICLE_MODEL,
     GEMINI_API_KEY,
     GEMINI_MODEL,
+    resolve_news_epoch_guideline_path,
 )
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -40,84 +41,118 @@ def resolve_article_llm_provider() -> str:
     return "gemini"
 
 
+def _strip_yaml_frontmatter(md: str) -> str:
+    md = md.lstrip("\ufeff").strip()
+    if not md.startswith("---"):
+        return md
+    parts = md.split("---", 2)
+    if len(parts) >= 3:
+        return parts[2].strip()
+    return md
+
+
+def _load_news_epoch_guideline_excerpt() -> str:
+    """Obsidian `NEWS EPOCH 작성 지침.md` — FlowTracer 전용 절(§10)은 토큰·혼선 방지로 제외."""
+    path = resolve_news_epoch_guideline_path()
+    if not path:
+        return ""
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    body = _strip_yaml_frontmatter(raw)
+    if "## 10. FlowTracer" in body:
+        body = body.split("## 10. FlowTracer", 1)[0].strip()
+    return body
+
+
 def _build_weekly_draft_prompt(trigger_summary: str, trigger_type: str) -> str:
-    return f"""아래 국회 입법 데이터를 바탕으로 기사 초안을 작성하세요.
+    guide = _load_news_epoch_guideline_excerpt()
+    guide_block = ""
+    if guide:
+        guide_block = f"""
+
+---
+[NEWS EPOCH 공통 작성 지침 — Legiscope 입법 데이터 기사에 적용. 타 파이프라인(예: FlowTracer)만의 규칙은 무시해도 된다.]
+{guide}
+---
+"""
+    return f"""아래 국회 입법 데이터만 근거로 기사 초안을 작성하세요.
 
 트리거 유형: {trigger_type}
 데이터:
 {trigger_summary}
 
 {NEWS_EPOCH_SYSTEM_PROMPT}
+{guide_block}
+[Legiscope 데이터 전용 — 반드시 준수]
+- 위 「데이터」에 없는 기관·판례·국제기구·외부 통계·다른 나라 입법을 인용하지 마세요. 배경 한 줄이라도 데이터 밖 추론이면 삭제합니다.
+- 발의 건수·날짜 등 모든 수치는 「데이터」에 나온 것만 씁니다. 출처는 본문에 한 번 이상 "Legiscope·국회 의안정보 기준" 또는 이에 준하는 표현으로 밝힙니다.
+- 본문은 800~2200자(공백 포함), 소제목 2~3개. 마지막 문장은 반드시 완전한 한국어 문장으로 끝내고 마침표(.)까지 출력합니다. 출력을 중간에 끊지 마세요.
+- 말미 고정 푸터 한 줄은 시스템 지시에 있는 문구를 그대로 붙입니다.
 
 [추가 지시]
-- 영향받는 대표 기업명을 구체적으로 언급. 추론 금지, 법안 내용과 직접 연결된 기업만.
-- 규제 법안은 비용·부담·리스크 각도로, 지원 법안은 수혜·기회·성장 각도로. 둘이 섞이면 구분 서술.
-- 데이터에 위원회 정보가 있으면 "○○위원회에 계류 중" 형태로 반드시 언급.
-- 법안 제안이유가 제공된 경우, 반드시 실제 내용만 인용. 제공 안 된 법안의 내용은 추론하지 말 것.
+- 대표 기업명은 데이터와 직접 연결될 때만. 없으면 업종·역할(인쇄업·지방의회 등)만 구체화합니다.
+- 규제 법안은 비용·부담·리스크, 지원 법안은 수혜·기회. 섞이면 구분합니다.
+- 위원회 정보가 데이터에 있으면 "○○위원회" 형태로 언급합니다.
+- 제안이유는 제공된 텍스트만 인용합니다. 미수집이면 내용을 상상하지 말고 "제안이유 미공개" 등으로만 처리합니다.
 
 한국어로 작성."""
 
 
 def _gemini_response_text(response) -> str:
+    out = ""
     try:
-        t = (response.text or "").strip()
-        if t:
-            return t
+        out = (response.text or "").strip()
     except (ValueError, AttributeError):
-        pass
-    if not getattr(response, "candidates", None):
+        out = ""
+    if not out and getattr(response, "candidates", None):
+        cand = response.candidates[0]
+        parts = getattr(getattr(cand, "content", None), "parts", None) or []
+        out = "".join(getattr(p, "text", "") or "" for p in parts).strip()
+    if not out:
         return "[Gemini: 응답 없음]"
-    cand = response.candidates[0]
-    parts = getattr(getattr(cand, "content", None), "parts", None) or []
-    return "".join(getattr(p, "text", "") or "" for p in parts).strip() or "[Gemini: 빈 응답]"
+    fr = None
+    if getattr(response, "candidates", None):
+        fr = getattr(response.candidates[0], "finish_reason", None)
+    if fr is not None:
+        fr_name = getattr(fr, "name", str(fr))
+        if fr_name == "MAX_TOKENS":
+            out += "\n\n[시스템: 모델 출력 길이 상한에 도달했을 수 있습니다. 문장이 끊기면 재생성하세요.]"
+    return out
 
 TODAY = date.today()
 WEEK_AGO = TODAY - timedelta(days=7)
 MONTH_AGO = TODAY - timedelta(days=30)
 
-# NEWS EPOCH 기사 작성 공통 프롬프트 (Obsidian 작성 지침과 동기화)
+# NEWS EPOCH 기사 작성 (Legiscope용 요약 — 상세는 Obsidian 지침 파일 + §FlowTracer 제외 본문)
 NEWS_EPOCH_SYSTEM_PROMPT = """당신은 정통 경제지 'NEWS EPOCH'의 수석 애널리스트이자 전문 기자입니다.
-독자는 경영진·투자자·법무담당자입니다. 단순 사실 전달이 아니라 데이터가 가리키는 구조적 의미를 해석해 전달합니다.
+독자는 경영진·투자자·법무담당자입니다. 단순 사실 전달이 아니라 데이터가 말하는 함의를 능동태·명확한 주어로 전달합니다.
 
 [기사 구조]
-1. 제목: [Legiscope] 제목 (30자 내외)
-   - 이슈 실체 + 영향받는 산업/기업명 + 동사. 매번 다른 구조.
-   - 좋은 예: "대부업 규제 64건, 막힐수록 저신용 대출은 사금융으로 흐른다"
-   - 나쁜 예: "대부업법 개정안 64건 발의" (팩트 나열)
-2. 리드문: 2~4문장.
-   - 첫 문장 = 관점(thesis). 단순 사실 나열 금지.
-   - 독자의 돈/비용/사업에 닿는 문장으로 시작.
-   - 좋은 예: "반도체 세정제, 배터리 전해질, 자동차 도료. 제조업 핵심 공정의 필수 소재를 다루는 규제가 국회를 통과하고 있다."
-   - 나쁜 예: "22대 국회에서 생활화학제품법 개정안 3건이 가결됐다."
-3. 본문: 800~1200자. 소제목 2~3개. 법안명은 「」 인용.
-   - 소제목은 뉴스 톤 (사실 + 의미 함축). "~가 가리키는 방향" 같은 보고서 소제목 금지.
-   - 수혜자(기회)와 피해자(부담) 구분 서술.
-4. 클로징: 리드의 thesis를 닫는다. 새 주제를 열지 않는다.
-   - 좋은 예: "반도체·배터리·자동차 기업의 소재 원가는 이미 국회 안에서 움직이고 있다."
-   - 나쁜 예: "향후 추이를 지켜볼 필요가 있다." / "기업은 대비해야 한다."
+1. 제목: `[Legiscope]` + 한 줄 제목 (대략 28~36자). 이슈 실체 + 영향 축 + 동사. 제목에 `전쟁` 등 과장 격투 메타포는 피합니다.
+2. 리드: 2~4문장. 첫 문장 = thesis(왜 읽는지). 돈·비용·사업에 닿는 표현 우선. 리드에 KSIC·의안번호 같은 내부 코드는 쓰지 않습니다.
+3. 본문: 소제목 `## ` 2~3개. 법안명은 「」. 뉴스 톤 소제목만 (보고서형 "~의 의미", "~가 가리키는 방향" 금지).
+4. 클로징: 리드의 thesis를 닫습니다. 새 기관·새 이슈를 열지 않습니다. 질문으로만 끝내거나 "~의 본질이다" 선언으로 끝내지 않습니다.
 
-[숫자 제시 규칙]
-- 단독 숫자 금지. 반드시 비교 기준과 함께 제시.
-  - 나쁜 예: "생활화학제품법이 3건 가결됐다."
-  - 좋은 예: "10건 이상 발의되고도 가결 0건인 법률이 50개에 달하는 국회에서, 생활화학제품법은 1년 만에 3건이 가결됐다."
+[숫자]
+- 단독 숫자만 던지지 말고 비교·범위·맥락을 붙입니다. 데이터에 없는 비교 수치는 만들지 않습니다.
 
-[문체 원칙]
-- 능동태 우선. "발의됐다" 대신 "○○의원이 발의했다".
-- 수동태는 주어를 알 수 없을 때만 허용.
-- 괄호 최소화. 중요하면 문장으로, 안 중요하면 삭제.
-- 전문용어 풀어쓰기: 계류 → "국회에 쌓여 있다", 회부 → "위원회로 넘겼다" 등.
+[문체]
+- 능동태·주어 명확. `~이다.` 만 3연속 금지 — 접속으로 묶습니다.
+- 한 기사에서 `구조다`(또는 `구조적이다`)는 2회를 넘기지 않습니다. `보여준다` `주목할 만하다` 남용 금지.
+- 본문에서 「이 기사에서」「아래에서는」 등 글 자체를 가리키는 메타 내비게이션 금지.
+- 괄호는 최소화합니다.
 
 [절대 금지]
-- 수동태/모호 표현: 관측된다, 확인된다, 보여진다, 알려졌다, 예상된다
-- 보고서 톤: "~해야 한다", "모니터링이 필요하다", "구조적 변수다", "주목할 필요가 있다"
-- 보도자료 톤: "혁신적 시너지", "도약의 발판"
-- "시사점 1, 2, 3" / "첫째, 둘째, 셋째" 나열
-- "이를 통해", "따라서"로 시작하는 결론
-- 제공된 데이터에 없는 배경·맥락 추론 (환각 절대 금지)
-- 계류 중인 법안에 "영향을 미친다" 단정 — "가결될 경우", "통과 시" 조건부 표현 사용
-- KSIC 코드 노출 (독자에게 무의미)
+- 관측된다·확인된다·알려졌다·예상된다 등 수동·모호 서술
+- 향후 추이를 지켜볼 필요가 있다 / 기업은 대비해야 한다 / 모니터링이 필요하다
+- 홍보·시적 비유·검증 안 된 수식어
+- 데이터에 없는 국제기구·외국법·판례·통계 인용
+- 계류 법안을 가결처럼 단정 — 필요 시 `통과 시` `가결되면` 조건
+- KSIC 코드 노출
 
-[말미 고정 문구 — 본문 완료 후 한 줄 띄고 반드시 포함]
+[말미 고정 문구 — 본문 끝에 한 줄 띄우고 반드시 그대로]
 이 기사는 News Epoch가 구축한 입법 추적 엔진 Legiscope를 기반으로 작성했습니다."""
 
 KSIC_NAME = {
@@ -559,21 +594,28 @@ def generate_sector_article(sector_name: str) -> str:
     data = get_sector_data(sector_name)
     db_data = build_sector_prompt_data(data)
 
+    guide = _load_news_epoch_guideline_excerpt()
+    guide_block = (
+        f"\n\n---\n[NEWS EPOCH 공통 작성 지침]\n{guide}\n---\n"
+        if guide
+        else ""
+    )
     prompt = f"""아래는 국회 발의 법안 DB에서 직접 조회한 {sector_name}업 입법 데이터입니다. 이 데이터만을 근거로 기사를 작성하세요.
 
 {db_data}
 
 {NEWS_EPOCH_SYSTEM_PROMPT}
-
+{guide_block}
 [추가 지시]
 - industry_signals 수치는 반드시 위 제공 데이터 그대로 사용. 임의 변경 절대 금지.
 - 최근 발의 법안 중 주목할 것 2~3건 구체 서술.
 - 계류 규제법안 건수와 위원회 정보 언급.
-- 수혜자(기회)와 피해자(부담) 구분 서술. 대표 기업명 구체 언급.
+- 수혜자(기회)와 피해자(부담) 구분 서술. 대표 기업명은 데이터와 연결될 때만.
+- 마지막 문장을 완결하고, 본문+푸터 포함 800~2200자 목표. 데이터에 없는 외부 배경·국제기구 인용 금지.
 
 한국어로 작성."""
 
-    return _generate_article_completion(prompt, max_tokens_claude=2048, max_tokens_gemini=4096)
+    return _generate_article_completion(prompt, max_tokens_claude=4096, max_tokens_gemini=8192)
 
 
 def generate_draft_gemini(trigger_summary: str, trigger_type: str) -> str:
@@ -590,8 +632,8 @@ def generate_draft_gemini(trigger_summary: str, trigger_type: str) -> str:
         response = model.generate_content(
             prompt,
             generation_config=genai.types.GenerationConfig(
-                max_output_tokens=4096,
-                temperature=0.7,
+                max_output_tokens=8192,
+                temperature=0.45,
             ),
         )
         return _gemini_response_text(response)
@@ -611,7 +653,7 @@ def generate_draft_claude(trigger_summary: str, trigger_type: str) -> str:
         prompt = _build_weekly_draft_prompt(trigger_summary, trigger_type)
         msg = client.messages.create(
             model=CLAUDE_ARTICLE_MODEL,
-            max_tokens=2048,
+            max_tokens=4096,
             messages=[{"role": "user", "content": prompt}],
         )
         return msg.content[0].text
@@ -657,7 +699,7 @@ def _generate_article_completion(
             prompt,
             generation_config=genai.types.GenerationConfig(
                 max_output_tokens=max_tokens_gemini,
-                temperature=0.7,
+                temperature=0.45,
             ),
         )
         return _gemini_response_text(response)
