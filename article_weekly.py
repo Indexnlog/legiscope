@@ -19,7 +19,7 @@ import sys
 import argparse
 import io
 from datetime import date, timedelta
-from collections import defaultdict
+from collections import Counter, defaultdict
 from db.client import get_client
 from utils.proposer_members import extract_member_names
 from config import (
@@ -87,6 +87,9 @@ _LEGISCOPE_FACT_SYSTEM = """NEWS EPOCH 기사 초안은 편집자가 마련한 L
 절대 규칙:
 - SOURCE_FACTS(이번 호출에 포함된 파이프라인 출력 텍스트)에 없는 기관명·국가·국제협약·판례·통계·날짜·건수·인용을 새로 만들지 마세요.
 - ‘기사처럼 보이게’ 데이터 밖 배경(국제기구, 외국 입법, 일반론)을 붙이지 마세요. 붙이고 싶으면 해당 문장은 통째로 삭제하세요.
+- 국제기구·외국 제도(OECD, ILO 등)는 해당 법안의 「제안이유」에 SOURCE_FACTS로 실린 문장에 있을 때만, 그 법안을 특정해 인용하세요. 일반 배경으로 확장하지 마세요.
+- 출처 표기는 Legiscope·NEWS EPOCH 입법 데이터 등만. 국회 의안정보시스템·의안포털 등은 SOURCE_FACTS 문자열에 그 표기가 없으면 쓰지 마세요.
+- 집중 발의 N건 등 머리말 숫자는 SOURCE_FACTS에 적힌 집계 구간(예: 최근 30일 클러스터)과만 맞추세요. 달력 ‘이번 달만’·‘3월에만’처럼 다시 집계해 바꾸지 마세요. 월별 건수는 각 행의 발의일을 근거로만 세고, 근거 없는 월 단위 총합은 쓰지 마세요.
 - 법안명·의원명·위원회명·숫자는 SOURCE_FACTS에 나온 표기만 사용하세요.
 - 해석·논지는 SOURCE_FACTS 안에서만 세우고, 원인을 데이터 밖에서 단정하지 마세요.
 - 한국어 기사 형식을 유지하되, 위는 NEWS EPOCH 편집 지침 §0과 동일한 하드 제약입니다."""
@@ -379,7 +382,8 @@ def _build_weekly_draft_prompt(trigger_summary: str, trigger_type: str) -> str:
 [Legiscope — 환각 방지, 최우선]
 - 사실 단정 한 문장이라도 SOURCE_FACTS에 대응 문장·숫자가 없으면 쓰지 마세요. ‘그럴듯한’ 배경은 삭제가 정답입니다.
 - 발의 건수·날짜·법안명·의원명·위원회명은 SOURCE_FACTS에 있는 표기만 씁니다.
-- 출처는 본문에 한 번 이상 "Legiscope·국회 의안정보 기준" 등으로 밝힙니다.
+- 출처는 "Legiscope(입법 추적 데이터)" 또는 "NEWS EPOCH·Legiscope" 등만. 국회 의안정보시스템·의안포털 등은 SOURCE_FACTS에 그 문구가 없으면 쓰지 마세요.
+- 동일 이슈 집중 발의: SOURCE_FACTS 머리의 건수·[집계] 설명과만 일치하게 쓰고, 달력 한 달만의 건수로 바꿔 쓰지 마세요.
 - 본문 800~2200자(공백 포함), 소제목 2~3개. 마지막 문장은 완전한 한국어로 마침표(.)까지. 중간 절단 금지.
 - 말미 고정 푸터 한 줄은 시스템 지시 문구를 그대로 붙입니다.
 
@@ -438,7 +442,7 @@ NEWS_EPOCH_SYSTEM_PROMPT = """당신은 정통 경제지 'NEWS EPOCH'의 수석 
 - 관측된다·확인된다·알려졌다·예상된다 등 수동·모호 서술
 - 향후 추이를 지켜볼 필요가 있다 / 기업은 대비해야 한다 / 모니터링이 필요하다
 - 홍보·시적 비유·검증 안 된 수식어
-- 데이터에 없는 국제기구·외국법·판례·통계 인용
+- SOURCE_FACTS의 특정 법안 제안이유 밖으로 국제기구·외국법·통계를 일반 배경으로 확장하는 인용
 - 계류 법안을 가결처럼 단정 — 필요 시 `통과 시` `가결되면` 조건
 - KSIC 코드 노출
 
@@ -1222,7 +1226,22 @@ def main():
                 file_label = first_key[:15]  # 예: "약사법", "정보통신망"
                 ind = industry_name(first_group[0]["ksic_code"])
                 slice_bills = list(first_group[:8])
-                key_data = f"[{ind}] '{first_key}…' 관련 법안 {len(first_group)}건 집중 발의\n"
+                key_data = (
+                    f"[{ind}] '{first_key}…' 관련 법안 {len(first_group)}건 집중 발의\n"
+                    f"[집계] 최근 30일 이내 발의, 법안명 앞 15자 동일 그룹, bill_id 중복 제거 기준입니다. "
+                    f"달력 한 달만의 건수는 아래 [월별 발의 건수]를 따르세요. 상단 총 건수(30일 클러스터)와 특정 한 달 건수는 다를 수 있습니다.\n"
+                )
+                _by_month: Counter[str] = Counter()
+                for _b in first_group:
+                    _pd = (_b.get("propose_dt") or "").strip()
+                    if len(_pd) >= 7:
+                        _by_month[_pd[:7]] += 1
+                if _by_month:
+                    _parts = []
+                    for _ym in sorted(_by_month.keys()):
+                        _y, _m = _ym.split("-", 1)
+                        _parts.append(f"{int(_y)}년 {int(_m)}월 {_by_month[_ym]}건")
+                    key_data += "[월별 발의 건수 — 클러스터 전체] " + ", ".join(_parts) + "\n"
                 try:
                     db = get_client()
                     bill_ids = [b["bill_id"] for b in slice_bills if b.get("bill_id")]
@@ -1242,7 +1261,7 @@ def main():
                             detail = detail_by_id.get(b.get("bill_id"), {})
                             reason = detail.get("proposal_reason") or ""
                             reason_summary = (
-                                reason[:300].replace("\n", " ") if reason else "제안이유 미수집"
+                                reason[:450].replace("\n", " ") if reason else "제안이유 미수집"
                             )
                             committee = detail.get("committee") or b.get("committee", "")
                             key_data += (
