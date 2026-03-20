@@ -41,6 +41,84 @@ def resolve_article_llm_provider() -> str:
     return "gemini"
 
 
+# 초안에 자주 끼어드는 ‘데이터 밖’ 배경. <SOURCE_FACTS>에 없으면 경고(환각 의심).
+_EXTERNAL_FACT_MARKERS = (
+    "국제기구",
+    "국제 사회",
+    "국제적 압력",
+    "유엔",
+    "UN ",
+    "UN이",
+    "OECD",
+    "세계은행",
+    "국제통화기금",
+    "IMF",
+    "유럽연합",
+    "EU ",
+    "EU의",
+    " G7",
+    "G7",
+    " G20",
+    "G20",
+    "AI Act",
+    "디지털시장법",
+    "CBAM",
+    "미국 의회",
+    "백악관",
+    "일본 정부",
+    "중국 정부",
+    "유럽의회",
+    "세계무역기구",
+    "WTO",
+)
+
+# LLM 기사 초안용 — 모델이 ‘기자답게’ 말하려다 데이터 밖 지식을 섞는 것을 줄이기 위한 시스템 지시
+_LEGISCOPE_FACT_SYSTEM = """당신은 Legiscope가 넘긴 SOURCE_FACTS 블록 안의 사실만으로 초안을 씁니다.
+
+절대 규칙:
+- SOURCE_FACTS에 없는 기관명·국가·국제협약·판례·통계·날짜·건수를 새로 만들지 마세요.
+- 배경 지식으로 ‘당연해 보이는’ 문장(국제기구, 외국 입법, 일반론)을 보태지 마세요. 보태고 싶으면 그 문장은 통째로 삭제하세요.
+- 숫자와 법안명·의원명·위원회명은 SOURCE_FACTS에 나온 문자열만 사용하세요.
+- 해석은 조건문·완곡 표현으로 하되, 원인을 데이터 밖에서 단정하지 마세요.
+- 출력은 한국어 기사 형식이되, 위 규칙을 어기면 안 됩니다."""
+
+
+def _scan_draft_for_external_markers(draft: str, source_facts: str) -> list[str]:
+    """초안에 있으나 source_facts에 없는 외부 배경 키워드 목록."""
+    if not draft or not source_facts:
+        return []
+    d = draft.casefold()
+    s = source_facts.casefold()
+    found: list[str] = []
+    for m in _EXTERNAL_FACT_MARKERS:
+        key = m.strip().casefold()
+        if len(key) < 2:
+            continue
+        if key in d and key not in s:
+            found.append(m.strip())
+    # 중복 제거, 짧은 것이 긴 것에 포함되면 정리
+    out, seen = [], set()
+    for x in found:
+        if x not in seen:
+            seen.add(x)
+            out.append(x)
+    return out
+
+
+def _apply_draft_fact_guard(draft: str, source_facts: str) -> str:
+    """환각 의심 키워드를 잡아 편집자 경고를 붙임(자동 삭제는 사실 오탐 위험으로 하지 않음)."""
+    bad = _scan_draft_for_external_markers(draft, source_facts)
+    if not bad:
+        return draft
+    note = (
+        "\n\n---\n[Legiscope 자동 검사] 아래 표현이 이번 입력 데이터(SOURCE_FACTS)에 없습니다. "
+        "환각 가능성이 있으니 삭제·수정 후 사용하세요: "
+        + ", ".join(bad)
+        + "\n---"
+    )
+    return draft.rstrip() + note
+
+
 def _strip_yaml_frontmatter(md: str) -> str:
     md = md.lstrip("\ufeff").strip()
     if not md.startswith("---"):
@@ -77,25 +155,28 @@ def _build_weekly_draft_prompt(trigger_summary: str, trigger_type: str) -> str:
 {guide}
 ---
 """
-    return f"""아래 국회 입법 데이터만 근거로 기사 초안을 작성하세요.
+    return f"""아래 <SOURCE_FACTS> 안의 텍스트만 사실 근거로 사용하세요. 블록 밖 지식·상식·뉴스 배경을 끌어오지 마세요.
 
 트리거 유형: {trigger_type}
-데이터:
+
+<SOURCE_FACTS>
 {trigger_summary}
+</SOURCE_FACTS>
+
+{_LEGISCOPE_FACT_SYSTEM}
 
 {NEWS_EPOCH_SYSTEM_PROMPT}
 {guide_block}
-[Legiscope 데이터 전용 — 반드시 준수]
-- 위 「데이터」에 없는 기관·판례·국제기구·외부 통계·다른 나라 입법을 인용하지 마세요. 배경 한 줄이라도 데이터 밖 추론이면 삭제합니다.
-- 발의 건수·날짜 등 모든 수치는 「데이터」에 나온 것만 씁니다. 출처는 본문에 한 번 이상 "Legiscope·국회 의안정보 기준" 또는 이에 준하는 표현으로 밝힙니다.
-- 본문은 800~2200자(공백 포함), 소제목 2~3개. 마지막 문장은 반드시 완전한 한국어 문장으로 끝내고 마침표(.)까지 출력합니다. 출력을 중간에 끊지 마세요.
-- 말미 고정 푸터 한 줄은 시스템 지시에 있는 문구를 그대로 붙입니다.
+[Legiscope — 환각 방지, 최우선]
+- 사실 단정 한 문장이라도 SOURCE_FACTS에 대응 문장·숫자가 없으면 쓰지 마세요. ‘그럴듯한’ 배경은 삭제가 정답입니다.
+- 발의 건수·날짜·법안명·의원명·위원회명은 SOURCE_FACTS에 있는 표기만 씁니다.
+- 출처는 본문에 한 번 이상 "Legiscope·국회 의안정보 기준" 등으로 밝힙니다.
+- 본문 800~2200자(공백 포함), 소제목 2~3개. 마지막 문장은 완전한 한국어로 마침표(.)까지. 중간 절단 금지.
+- 말미 고정 푸터 한 줄은 시스템 지시 문구를 그대로 붙입니다.
 
 [추가 지시]
-- 대표 기업명은 데이터와 직접 연결될 때만. 없으면 업종·역할(인쇄업·지방의회 등)만 구체화합니다.
-- 규제 법안은 비용·부담·리스크, 지원 법안은 수혜·기회. 섞이면 구분합니다.
-- 위원회 정보가 데이터에 있으면 "○○위원회" 형태로 언급합니다.
-- 제안이유는 제공된 텍스트만 인용합니다. 미수집이면 내용을 상상하지 말고 "제안이유 미공개" 등으로만 처리합니다.
+- 대표 기업명은 SOURCE_FACTS에 있을 때만. 없으면 업종·역할만.
+- 제안이유는 인용된 텍스트만. 미수집이면 추측 금지, "제안이유 미공개" 등만.
 
 한국어로 작성."""
 
@@ -127,7 +208,7 @@ MONTH_AGO = TODAY - timedelta(days=30)
 
 # NEWS EPOCH 기사 작성 (Legiscope용 요약 — 상세는 Obsidian 지침 파일 + §FlowTracer 제외 본문)
 NEWS_EPOCH_SYSTEM_PROMPT = """당신은 정통 경제지 'NEWS EPOCH'의 수석 애널리스트이자 전문 기자입니다.
-독자는 경영진·투자자·법무담당자입니다. 단순 사실 전달이 아니라 데이터가 말하는 함의를 능동태·명확한 주어로 전달합니다.
+독자는 경영진·투자자·법무담당자입니다. 함의는 SOURCE_FACTS 안에서만 서술합니다. 데이터에 없는 원인·배경·국제 맥락을 ‘기사 품격’을 위해 보태지 마세요. 보태면 환각입니다.
 
 [기사 구조]
 1. 제목: `[Legiscope]` + 한 줄 제목 (대략 28~36자). 이슈 실체 + 영향 축 + 동사. 제목에 `전쟁` 등 과장 격투 메타포는 피합니다.
@@ -600,22 +681,29 @@ def generate_sector_article(sector_name: str) -> str:
         if guide
         else ""
     )
-    prompt = f"""아래는 국회 발의 법안 DB에서 직접 조회한 {sector_name}업 입법 데이터입니다. 이 데이터만을 근거로 기사를 작성하세요.
+    prompt = f"""아래 <SOURCE_FACTS>만 사실 근거로 {sector_name}업 입법 기사를 작성하세요.
 
+<SOURCE_FACTS>
 {db_data}
+</SOURCE_FACTS>
+
+{_LEGISCOPE_FACT_SYSTEM}
 
 {NEWS_EPOCH_SYSTEM_PROMPT}
 {guide_block}
 [추가 지시]
-- industry_signals 수치는 반드시 위 제공 데이터 그대로 사용. 임의 변경 절대 금지.
+- industry_signals 수치는 SOURCE_FACTS 그대로. 임의 변경 금지.
 - 최근 발의 법안 중 주목할 것 2~3건 구체 서술.
 - 계류 규제법안 건수와 위원회 정보 언급.
-- 수혜자(기회)와 피해자(부담) 구분 서술. 대표 기업명은 데이터와 연결될 때만.
-- 마지막 문장을 완결하고, 본문+푸터 포함 800~2200자 목표. 데이터에 없는 외부 배경·국제기구 인용 금지.
+- 수혜자(기회)와 피해자(부담) 구분. 기업명은 SOURCE_FACTS에 있을 때만.
+- 마지막 문장 완결. 본문+푸터 800~2200자 목표. SOURCE_FACTS 밖 배경·국제기구 금지.
 
 한국어로 작성."""
 
-    return _generate_article_completion(prompt, max_tokens_claude=4096, max_tokens_gemini=8192)
+    raw = _generate_article_completion(
+        prompt, max_tokens_claude=4096, max_tokens_gemini=8192
+    )
+    return _apply_draft_fact_guard(raw, db_data)
 
 
 def generate_draft_gemini(trigger_summary: str, trigger_type: str) -> str:
@@ -627,16 +715,19 @@ def generate_draft_gemini(trigger_summary: str, trigger_type: str) -> str:
         import google.generativeai as genai
 
         genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel(GEMINI_MODEL)
+        model = genai.GenerativeModel(
+            GEMINI_MODEL,
+            system_instruction=_LEGISCOPE_FACT_SYSTEM,
+        )
         prompt = _build_weekly_draft_prompt(trigger_summary, trigger_type)
         response = model.generate_content(
             prompt,
             generation_config=genai.types.GenerationConfig(
                 max_output_tokens=8192,
-                temperature=0.45,
+                temperature=0.15,
             ),
         )
-        return _gemini_response_text(response)
+        return _apply_draft_fact_guard(_gemini_response_text(response), trigger_summary)
     except Exception as e:
         return f"[Gemini API 오류: {e}]"
 
@@ -654,9 +745,10 @@ def generate_draft_claude(trigger_summary: str, trigger_type: str) -> str:
         msg = client.messages.create(
             model=CLAUDE_ARTICLE_MODEL,
             max_tokens=4096,
+            system=_LEGISCOPE_FACT_SYSTEM,
             messages=[{"role": "user", "content": prompt}],
         )
-        return msg.content[0].text
+        return _apply_draft_fact_guard(msg.content[0].text, trigger_summary)
     except Exception as e:
         return f"[Claude API 오류: {e}]"
 
@@ -682,6 +774,7 @@ def _generate_article_completion(
             msg = client.messages.create(
                 model=CLAUDE_ARTICLE_MODEL,
                 max_tokens=max_tokens_claude,
+                system=_LEGISCOPE_FACT_SYSTEM,
                 messages=[{"role": "user", "content": prompt}],
             )
             return msg.content[0].text
@@ -694,12 +787,15 @@ def _generate_article_completion(
         import google.generativeai as genai
 
         genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel(GEMINI_MODEL)
+        model = genai.GenerativeModel(
+            GEMINI_MODEL,
+            system_instruction=_LEGISCOPE_FACT_SYSTEM,
+        )
         response = model.generate_content(
             prompt,
             generation_config=genai.types.GenerationConfig(
                 max_output_tokens=max_tokens_gemini,
-                temperature=0.45,
+                temperature=0.15,
             ),
         )
         return _gemini_response_text(response)
