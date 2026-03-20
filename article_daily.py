@@ -233,14 +233,27 @@ def main():
 
     if not triggers:
         if args.slack:
-            from utils.slack import SlackNotifier
-            SlackNotifier().send(f"[-] *입법 레이더 일간* ({YESTERDAY_STR}) — 오늘 기사감 없음")
+            from utils.slack import send_daily_brief
+
+            send_daily_brief(
+                brief,
+                YESTERDAY_STR,
+                has_triggers=False,
+                passed_count=len(passed_bills),
+                proposed_count=len(proposed_bills),
+            )
         return
 
-    # Slack 브리프 전송
     if args.slack:
-        from utils.slack import SlackNotifier
-        SlackNotifier().send(f"[●] *입법 레이더 일간 브리프* ({YESTERDAY_STR})\n\n```{brief}```")
+        from utils.slack import send_daily_brief
+
+        send_daily_brief(
+            brief,
+            YESTERDAY_STR,
+            has_triggers=True,
+            passed_count=len(passed_bills),
+            proposed_count=len(proposed_bills),
+        )
 
     # 가장 강한 트리거로 초안 생성 (article_weekly와 동일 파이프라인)
     if args.draft:

@@ -123,6 +123,55 @@ def send_weekly_brief(has_triggers: bool, trigger_summary: str, date_str: str) -
     return notifier.send(fallback, blocks=blocks)
 
 
+def send_daily_brief(
+    brief_text: str,
+    yesterday_str: str,
+    *,
+    has_triggers: bool,
+    passed_count: int,
+    proposed_count: int,
+) -> bool:
+    """일간 브리프 — 주간과 동일 패턴(헤더·컨텍스트·코드 펜스 본문)."""
+    notifier = SlackNotifier()
+
+    status = "기사 소재 감지" if has_triggers else "오늘 기사감 없음"
+    emoji = "●" if has_triggers else "○"
+    fallback = (
+        f"[{emoji}] 입법 레이더 일간 ({yesterday_str}) — {status} "
+        f"(가결 {passed_count} / 발의 {proposed_count})"
+    )
+
+    stat_line = f"어제 가결 *{passed_count}*건 · 발의 *{proposed_count}*건"
+    blocks: list[dict] = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": "입법 레이더 일간 브리프", "emoji": True},
+        },
+        {
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": f"📅 *기준일: {yesterday_str}* · {stat_line} · {status}",
+                }
+            ],
+        },
+        {"type": "divider"},
+    ]
+
+    body = (brief_text or "").strip()
+    if body:
+        for chunk in _chunk_text(body, _MRDKWN_CHUNK - 8):
+            blocks.append(
+                {
+                    "type": "section",
+                    "text": {"type": "mrkdwn", "text": _fence_code(chunk)},
+                }
+            )
+
+    return notifier.send(fallback, blocks=blocks)
+
+
 def send_article_draft(title: str, draft: str, date_str: str) -> bool:
     """기사 초안 — 헤더·제목은 mrkdwn, 본문은 코드 펜스(슬랙에서 ** 등 포맷 깨짐 방지). 길면 스레드 연속."""
     notifier = SlackNotifier()
