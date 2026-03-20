@@ -65,8 +65,14 @@ def run():
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
+                errors="replace",
                 timeout=600,
-                env={**os.environ, "PYTHONPATH": str(BASE)},
+                env={
+                    **os.environ,
+                    "PYTHONPATH": str(BASE),
+                    # Windows: 파이프 캡처 시 콘솔 cp949로 이모지/UTF-8 출력이 깨지지 않게
+                    "PYTHONIOENCODING": "utf-8",
+                },
             )
             if result.stdout:
                 for line in result.stdout.strip().splitlines():
