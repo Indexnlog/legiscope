@@ -6,6 +6,7 @@ open.assembly.go.kr 의안정보 통합 API
 import requests
 from config import ASSEMBLY_KEY
 from db.client import get_client
+from utils.proposer_members import extract_member_names
 
 BASE_URL = "https://open.assembly.go.kr/portal/openapi/TVBPMBILL11"
 
@@ -37,13 +38,17 @@ def fetch_bills(page: int = 1, page_size: int = 10, age: int = 22) -> list[dict]
 
     bills = []
     for row in rows:
+        prop = row.get("PROPOSER")
+        rst = row.get("RST_PROPOSER")
+        pkind = row.get("PROPOSER_KIND")
         bills.append({
             "bill_id":          row.get("BILL_ID"),
             "bill_no":          row.get("BILL_NO"),
             "bill_name":        row.get("BILL_NAME"),
-            "proposer":         row.get("PROPOSER"),
-            "rst_proposer":     row.get("RST_PROPOSER"),
-            "proposer_kind":    row.get("PROPOSER_KIND"),
+            "proposer":         prop,
+            "rst_proposer":     rst,
+            "proposer_kind":    pkind,
+            "proposer_members": extract_member_names(prop, rst, pkind),
             "committee":        row.get("CURR_COMMITTEE"),
             "propose_dt":       row.get("PROPOSE_DT"),
             "pass_gubun":       row.get("PASS_GUBUN"),       # 계류의안 / 가결 / 부결

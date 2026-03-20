@@ -18,6 +18,7 @@
 - `mapper/apply_ksic.py`: assigns KSIC codes.
 - `mapper/regulation_type.py`: applies regulation/support/neutral labels.
 - `bill_enricher`-style workflows feed article-quality fields such as `proposal_reason`.
+- `bills.proposer_members`: 의원 실명 JSON 배열 — `collectors/bills.py`가 `PROPOSER`/`RST_PROPOSER`에서 파싱해 upsert. 스키마·백필은 `db/schema_proposer_members.sql`, `collectors/backfill_proposer_members.py`.
 
 ## Aggregation
 - `processors/industry_signals.py` rolls bill-level data into industry metrics used by pdeck and dashboards.

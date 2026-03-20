@@ -19,6 +19,7 @@ import io
 from datetime import date, timedelta
 from collections import defaultdict
 from db.client import get_client
+from utils.proposer_members import extract_member_names
 from config import (
     ANTHROPIC_API_KEY,
     ARTICLE_LLM_PROVIDER,
@@ -175,22 +176,6 @@ def _bill_name_aliases(bill_name: str) -> set[str]:
     return {x for x in out if len(x) >= 2}
 
 
-def _proposer_to_person_names(proposer: str) -> set[str]:
-    """발의자 문자열에서 2~4글자 한글 덩어리(의원 성명 후보)."""
-    if not proposer:
-        return set()
-    s = re.sub(r"[0-9a-zA-Z]+", " ", proposer)
-    names: set[str] = set()
-    for raw in re.split(r"[\s·,/，、]+", s):
-        p = raw.strip()
-        for suf in ("의원", "등", "외", "대표", "발의"):
-            if p.endswith(suf) and len(p) > len(suf):
-                p = p[: -len(suf)]
-        if re.fullmatch(r"[가-힣]{2,4}", p):
-            names.add(p)
-    return names
-
-
 def build_sector_whitelist_from_db_text(db_data: str) -> frozenset[str]:
     """섹터 프롬프트 본문에서 `- 법안명 (` 형태 줄만 뽑아 별칭 화이트리스트."""
     wl: set[str] = set()
@@ -221,16 +206,33 @@ def build_weekly_trigger_whitelist(
         bid = b.get("bill_id")
         det = detail_by_bill_id.get(bid) if bid else None
         prop = ""
+        rst = (b.get("rst_proposer") or "").strip()
+        pkind = (b.get("proposer_kind") or "").strip()
         if isinstance(det, dict):
             prop = (det.get("proposer") or "").strip()
+            rst = (det.get("rst_proposer") or rst).strip()
+            pkind = (det.get("proposer_kind") or pkind).strip()
             cm2 = (det.get("committee") or "").strip()
             if cm2:
                 wl.add(cm2)
+            pm = det.get("proposer_members")
+            if isinstance(pm, list):
+                for x in pm:
+                    if isinstance(x, str) and len(x.strip()) >= 2:
+                        wl.add(x.strip())
         if not prop:
             prop = (b.get("proposer") or "").strip()
+        pm_b = b.get("proposer_members")
+        if isinstance(pm_b, list):
+            for x in pm_b:
+                if isinstance(x, str) and len(x.strip()) >= 2:
+                    wl.add(x.strip())
         if prop:
             wl.add(prop)
-            wl.update(_proposer_to_person_names(prop))
+        if rst:
+            wl.add(rst)
+        for n in extract_member_names(prop or None, rst or None, pkind or None):
+            wl.add(n)
     if extra_phrases:
         for x in extra_phrases:
             t = (x or "").strip()
@@ -806,7 +808,8 @@ def get_sector_data(sector_name: str) -> dict:
     seen_ids = set()
     for kw in keywords:
         rows = db.table("bills").select(
-            "bill_id,bill_name,propose_dt,committee,pass_gubun,proc_result_cd,regulation_type,proposer"
+            "bill_id,bill_name,propose_dt,committee,pass_gubun,proc_result_cd,"
+            "regulation_type,proposer,rst_proposer,proposer_kind,proposer_members"
         ).like("bill_name", f"%{kw}%").eq("age", "22").order("propose_dt", desc=True).limit(30).execute().data
         for r in rows:
             if r["bill_id"] in seen_ids:
@@ -903,8 +906,21 @@ def generate_sector_article(sector_name: str) -> str:
     raw = _generate_article_completion(
         prompt, max_tokens_claude=4096, max_tokens_gemini=8192
     )
-    sec_wl = build_sector_whitelist_from_db_text(db_data)
-    wl_opt = sec_wl if len(sec_wl) >= 2 else None
+    sec_wl: set[str] = set(build_sector_whitelist_from_db_text(db_data))
+    for rb in data["recent_bills"] + data["pending_reg_bills"]:
+        pm = rb.get("proposer_members")
+        if isinstance(pm, list):
+            for x in pm:
+                if isinstance(x, str) and len(x.strip()) >= 2:
+                    sec_wl.add(x.strip())
+        for n in extract_member_names(
+            rb.get("proposer"),
+            rb.get("rst_proposer"),
+            rb.get("proposer_kind"),
+        ):
+            sec_wl.add(n)
+    wl_fz = frozenset(x for x in sec_wl if x and len(x) >= 2)
+    wl_opt = wl_fz if len(wl_fz) >= 2 else None
     return _apply_draft_fact_guard(raw, db_data, name_whitelist=wl_opt)
 
 
@@ -1128,7 +1144,9 @@ def main():
                     if pids:
                         rows = (
                             db.table("bills")
-                            .select("bill_id,proposer,committee")
+                            .select(
+                                "bill_id,proposer,rst_proposer,proposer_kind,proposer_members,committee"
+                            )
                             .in_("bill_id", pids)
                             .execute()
                             .data
@@ -1151,7 +1169,8 @@ def main():
                         detail_rows = (
                             db.table("bills")
                             .select(
-                                "bill_id,bill_name,propose_dt,proposer,committee,proposal_reason"
+                                "bill_id,bill_name,propose_dt,proposer,rst_proposer,proposer_kind,"
+                                "proposer_members,committee,proposal_reason"
                             )
                             .in_("bill_id", bill_ids)
                             .execute()
@@ -1203,7 +1222,9 @@ def main():
                     if mids:
                         rows = (
                             db.table("bills")
-                            .select("bill_id,proposer,committee")
+                            .select(
+                                "bill_id,proposer,rst_proposer,proposer_kind,proposer_members,committee"
+                            )
                             .in_("bill_id", mids)
                             .execute()
                             .data
