@@ -10,6 +10,8 @@
      PYTHONPATH=. python article_weekly.py --sector 에너지환경
      PYTHONPATH=. python article_weekly.py --sector 부동산건설
      PYTHONPATH=. python article_weekly.py --sector 제조업
+
+일간/주간 Slack 브리프: output/slack_brief_dedupe.json (10일)로 상대 브리프에 실린 bill_id 제외.
 """
 import csv
 import re
@@ -657,8 +659,66 @@ def monthly_expiry_risk(bills):
     return unique[:15]
 
 
+def _weekly_slack_overlap_skip() -> frozenset[str]:
+    """최근 일간 Slack 브리프에 올라간 bill_id (주간 브리프 중복 완화)."""
+    from utils.brief_dedupe import recent_bill_ids_from_source, RETENTION_DAYS
+
+    return recent_bill_ids_from_source("weekly", retention_days=RETENTION_DAYS)
+
+
+def _filter_bills_slack_overlap(bills: list, skip: frozenset[str]) -> list:
+    return [b for b in bills if not b.get("bill_id") or str(b["bill_id"]) not in skip]
+
+
+def _filter_clusters_slack_overlap(clusters: dict, skip: frozenset[str]) -> dict:
+    out = {}
+    for key, group in clusters.items():
+        g = [b for b in group if not b.get("bill_id") or str(b["bill_id"]) not in skip]
+        if len(g) >= 3:
+            out[key] = g
+    return dict(sorted(out.items(), key=lambda x: len(x[1]), reverse=True))
+
+
+def collect_weekly_triggers_for_brief(bills, skip_daily_slack: frozenset[str]):
+    passed = _filter_bills_slack_overlap(trigger_reg_passed(bills), skip_daily_slack)
+    clusters = _filter_clusters_slack_overlap(trigger_cluster(bills), skip_daily_slack)
+    intl_raw = trigger_intl(bills)
+    intl = [
+        (b, r)
+        for b, r in intl_raw
+        if not b.get("bill_id") or str(b["bill_id"]) not in skip_daily_slack
+    ]
+    moved = _filter_bills_slack_overlap(trigger_pending_moved(bills), skip_daily_slack)
+    return passed, clusters, intl, moved
+
+
+def _bill_ids_featured_in_weekly_brief(passed, clusters, intl, moved) -> list[str]:
+    """브리프 본문에 실제로 찍힌 법안만 (Slack에 노출된 범위)."""
+    ordered: list[str] = []
+    seen: set[str] = set()
+
+    def add(b):
+        bid = b.get("bill_id")
+        if bid and str(bid) not in seen:
+            seen.add(str(bid))
+            ordered.append(str(bid))
+
+    for b in passed[:5]:
+        add(b)
+    for key, group in list(clusters.items())[:5]:
+        for b in group[:2]:
+            add(b)
+    for b, _ in intl[:5]:
+        add(b)
+    for b in moved[:5]:
+        add(b)
+    return ordered
+
+
 # ─── 출력 ─────────────────────────────────────────────────────────
 def print_weekly_brief(bills):
+    skip = _weekly_slack_overlap_skip()
+    passed, clusters, intl, moved = collect_weekly_triggers_for_brief(bills, skip)
     print("=" * 65)
     print(f"입법 레이더 주간 트리거 브리프 ({TODAY})")
     print("=" * 65)
@@ -666,7 +726,6 @@ def print_weekly_brief(bills):
     article_count = 0
 
     # A. 규제 법안 가결
-    passed = trigger_reg_passed(bills)
     if passed:
         article_count += 1
         print(f"\n[●] [즉시 기사감 A] 규제 법안 가결 ({len(passed)}건)")
@@ -678,7 +737,6 @@ def print_weekly_brief(bills):
         print(f"\n[-] [A] 이번 주 규제 법안 가결 없음")
 
     # B. 집중 발의 클러스터
-    clusters = trigger_cluster(bills)
     if clusters:
         article_count += 1
         print(f"\n[●] [즉시 기사감 B] 동일 이슈 집중 발의 클러스터 ({len(clusters)}개)")
@@ -692,7 +750,6 @@ def print_weekly_brief(bills):
         print(f"\n[-] [B] 이번 달 집중 발의 클러스터 없음")
 
     # C. EU/미국 연동
-    intl = trigger_intl(bills)
     if intl:
         article_count += 1
         print(f"\n[●] [즉시 기사감 C] 국제 규제 연동 법안 ({len(intl)}건)")
@@ -704,7 +761,6 @@ def print_weekly_brief(bills):
         print(f"\n[-] [C] 이번 달 국제 연동 법안 없음")
 
     # D. 계류 법안 움직임
-    moved = trigger_pending_moved(bills)
     if moved:
         article_count += 1
         print(f"\n[●] [즉시 기사감 D] 계류 규제법안 심사 진전 ({len(moved)}건)")
@@ -721,6 +777,8 @@ def print_weekly_brief(bills):
     else:
         print(f"⏸  이번 주 즉시 기사감 없음 → 패스 (월간 리포트 준비)")
     print(f"{'─'*65}")
+    brief_bill_ids = _bill_ids_featured_in_weekly_brief(passed, clusters, intl, moved)
+    return article_count, brief_bill_ids, passed, clusters, intl, moved
 
 
 def print_monthly_report(bills):
@@ -1110,21 +1168,19 @@ def main():
         # 주간 모드: 출력 캡처 후 Slack 전송 + 초안 생성
         buf = io.StringIO()
         sys.stdout = buf
-        print_weekly_brief(bills)
+        _, brief_bill_ids, passed, clusters, intl, moved = print_weekly_brief(bills)
         sys.stdout = sys.__stdout__
         brief_text = buf.getvalue()
         print(brief_text)
 
-        # 트리거 감지 여부 확인
-        passed  = trigger_reg_passed(bills)
-        clusters = trigger_cluster(bills)
-        intl    = trigger_intl(bills)
-        moved   = trigger_pending_moved(bills)
         has_triggers = any([passed, clusters, intl, moved])
 
         if args.slack:
             from utils.slack import send_weekly_brief
+            from utils.brief_dedupe import record_brief_bill_ids
+
             send_weekly_brief(has_triggers, brief_text, str(TODAY))
+            record_brief_bill_ids("weekly", brief_bill_ids)
 
         if args.draft and has_triggers:
             # 가장 강한 트리거 선택해서 초안 생성

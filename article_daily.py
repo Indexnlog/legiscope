@@ -5,6 +5,9 @@
 실행: PYTHONPATH=. python article_daily.py
      PYTHONPATH=. python article_daily.py --slack --draft
      (초안은 article_weekly와 동일: ARTICLE_LLM_PROVIDER / GEMINI_API_KEY·ANTHROPIC_API_KEY)
+
+일간/주간 Slack 브리프는 output/slack_brief_dedupe.json 으로 최근 10일간 bill_id를 맞춰
+같은 법안이 연달아 두 채널에 뜨는 경우를 줄입니다.
 """
 import sys
 import argparse
@@ -133,6 +136,54 @@ def check_triggers(passed_bills, proposed_bills):
     return triggers
 
 
+def _intl_ref_for_bill(bill):
+    for kw, ref in INTL_KEYWORDS.items():
+        if kw in (bill.get("bill_name") or ""):
+            return ref
+    return ""
+
+
+def apply_slack_overlap_dedupe_daily(triggers):
+    """최근 주간 Slack 브리프에 실린 bill_id는 일간 트리거에서 제외."""
+    from utils.brief_dedupe import recent_bill_ids_from_source, RETENTION_DAYS
+
+    skip = recent_bill_ids_from_source("daily", retention_days=RETENTION_DAYS)
+    if not skip or not triggers:
+        return triggers
+    out = []
+    for t in triggers:
+        typ = t["type"]
+        data = [
+            b
+            for b in (t.get("data") or [])
+            if not b.get("bill_id") or str(b["bill_id"]) not in skip
+        ]
+        if not data:
+            continue
+        if typ == "동일 이슈 집중 발의" and len(data) < 2:
+            continue
+        new_t = {**t, "data": data, "count": len(data)}
+        if typ == "규제 법안 가결":
+            new_t["lines"] = [
+                f"  - {b['bill_name'][:50]} ({b['proc_result_cd']}, {ind_name(b)})"
+                for b in data[:5]
+            ]
+        elif typ == "동일 이슈 집중 발의":
+            new_t["lines"] = [
+                f"  - {b['bill_name'][:48]} [{ind_name(b)}]"
+                for b in data[:5]
+            ]
+        elif typ == "국제 규제 연동 법안":
+            new_t["lines"] = [
+                f"  - {b['bill_name'][:50]} [참조: {_intl_ref_for_bill(b)}]"
+                for b in data[:5]
+            ]
+        else:
+            new_t["lines"] = t.get("lines") or []
+        out.append(new_t)
+    return out
+
+
 def build_brief(triggers, passed_total, proposed_total):
     lines = [
         f"입법 레이더 일간 브리프 ({YESTERDAY_STR})",
@@ -228,6 +279,7 @@ def main():
     print(f"  어제 가결: {len(passed_bills)}건 / 발의: {len(proposed_bills)}건")
 
     triggers = check_triggers(passed_bills, proposed_bills)
+    triggers = apply_slack_overlap_dedupe_daily(triggers)
     brief = build_brief(triggers, passed_bills, proposed_bills)
     print("\n" + brief)
 
@@ -246,6 +298,7 @@ def main():
 
     if args.slack:
         from utils.slack import send_daily_brief
+        from utils.brief_dedupe import record_brief_bill_ids
 
         send_daily_brief(
             brief,
@@ -254,6 +307,15 @@ def main():
             passed_count=len(passed_bills),
             proposed_count=len(proposed_bills),
         )
+        _ids: list[str] = []
+        _seen: set[str] = set()
+        for t in triggers:
+            for b in (t.get("data") or [])[:5]:
+                bid = b.get("bill_id")
+                if bid and str(bid) not in _seen:
+                    _seen.add(str(bid))
+                    _ids.append(str(bid))
+        record_brief_bill_ids("daily", _ids)
 
     # 가장 강한 트리거로 초안 생성 (article_weekly와 동일 파이프라인)
     if args.draft:
