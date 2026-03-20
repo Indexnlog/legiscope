@@ -22,6 +22,7 @@
 - Prefer updating schemas and docs together when DB structure changes.
 - Preserve existing data collection behavior unless the task explicitly changes collection logic.
 - Check related Obsidian project docs after substantial project changes.
+- **News Epoch articles must be fact-grounded in this repo’s API/collector/DB pipeline outputs.** Do not invent facts, entities, or numbers for articles or `article_*.py` drafts; see `docs/news_epoch_data_policy.md` and Obsidian `NEWS EPOCH 작성 지침.md` §0.
 
 ## Common Commands
 ```bash
@@ -44,3 +45,4 @@ python run_weekly.py
 - `docs/architecture.md`
 - `docs/pipeline.md`
 - `docs/operations.md`
+- `docs/news_epoch_data_policy.md` (NEWS EPOCH × Legiscope 데이터 원천)

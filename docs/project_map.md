@@ -56,7 +56,8 @@ legiscope/
 
 ## 기사 초안 · NEWS EPOCH 지침
 
-- `article_weekly.py`는 가능하면 Obsidian `NEWS EPOCH 작성 지침.md`를 읽어 프롬프트에 붙입니다.
+- **사실은 API·파이프라인 출력만:** Obsidian `NEWS EPOCH 작성 지침.md` **§0**, 레포 `docs/news_epoch_data_policy.md`. LLM 임의 창작 금지.
+- `article_weekly.py`는 가능하면 위 지침 파일 전문을 읽어 프롬프트에 붙입니다.
 - 경로: `NEWS_EPOCH_GUIDELINE_PATH`(.env) → 없으면 `config.py`의 Dropbox 기본 경로(파일 있을 때만).
 
 ## 상세 문서
