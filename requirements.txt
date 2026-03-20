@@ -1,5 +1,6 @@
 requests
 python-dotenv
+google-generativeai
 beautifulsoup4
 lxml
 pandas

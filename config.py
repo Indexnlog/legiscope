@@ -22,6 +22,13 @@ SUPABASE_URL = _get("SUPABASE_URL")
 SUPABASE_ANON_KEY = _get("SUPABASE_ANON_KEY")
 LAW_OC = _get("LAW_OC")  # 법제처 OC코드 (open.law.go.kr 가입 이메일 ID)
 
+# 기사 초안 LLM: gemini | claude (미설정 시 GEMINI_API_KEY 있으면 gemini, 아니면 claude)
+ARTICLE_LLM_PROVIDER = (_get("ARTICLE_LLM_PROVIDER") or "").strip().lower()
+GEMINI_API_KEY = _get("GEMINI_API_KEY")
+GEMINI_MODEL = _get("GEMINI_MODEL") or "gemini-2.5-flash"
+ANTHROPIC_API_KEY = _get("ANTHROPIC_API_KEY")
+CLAUDE_ARTICLE_MODEL = _get("CLAUDE_ARTICLE_MODEL") or "claude-sonnet-4-6"
+
 # 공공데이터포털 OpenAPI 엔드포인트
 BILL_LIST_URL = "https://open.assembly.go.kr/portal/openapi/TVBPMBILL11"
 BILL_DETAIL_URL = "https://open.assembly.go.kr/portal/openapi/nzmimeepazxkubdpn"

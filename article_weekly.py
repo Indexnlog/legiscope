@@ -3,7 +3,7 @@
 실행: PYTHONPATH=. python article_weekly.py
      PYTHONPATH=. python article_weekly.py --monthly
      PYTHONPATH=. python article_weekly.py --slack        (Slack 전송 포함)
-     PYTHONPATH=. python article_weekly.py --draft        (Claude API 초안 생성)
+     PYTHONPATH=. python article_weekly.py --draft        (Gemini/Claude 초안, .env 키 기준)
      PYTHONPATH=. python article_weekly.py --sector 금융   (섹터 심층 기사 생성)
      PYTHONPATH=. python article_weekly.py --sector 디지털AI
      PYTHONPATH=. python article_weekly.py --sector 바이오의료
@@ -18,8 +18,58 @@ import io
 from datetime import date, timedelta
 from collections import defaultdict
 from db.client import get_client
+from config import (
+    ANTHROPIC_API_KEY,
+    ARTICLE_LLM_PROVIDER,
+    CLAUDE_ARTICLE_MODEL,
+    GEMINI_API_KEY,
+    GEMINI_MODEL,
+)
 
 sys.stdout.reconfigure(encoding="utf-8")
+
+
+def resolve_article_llm_provider() -> str:
+    """gemini | claude. ARTICLE_LLM_PROVIDER 우선, 없으면 키 있는 쪽."""
+    if ARTICLE_LLM_PROVIDER in ("gemini", "claude"):
+        return ARTICLE_LLM_PROVIDER
+    if GEMINI_API_KEY:
+        return "gemini"
+    if ANTHROPIC_API_KEY:
+        return "claude"
+    return "gemini"
+
+
+def _build_weekly_draft_prompt(trigger_summary: str, trigger_type: str) -> str:
+    return f"""아래 국회 입법 데이터를 바탕으로 기사 초안을 작성하세요.
+
+트리거 유형: {trigger_type}
+데이터:
+{trigger_summary}
+
+{NEWS_EPOCH_SYSTEM_PROMPT}
+
+[추가 지시]
+- 영향받는 대표 기업명을 구체적으로 언급. 추론 금지, 법안 내용과 직접 연결된 기업만.
+- 규제 법안은 비용·부담·리스크 각도로, 지원 법안은 수혜·기회·성장 각도로. 둘이 섞이면 구분 서술.
+- 데이터에 위원회 정보가 있으면 "○○위원회에 계류 중" 형태로 반드시 언급.
+- 법안 제안이유가 제공된 경우, 반드시 실제 내용만 인용. 제공 안 된 법안의 내용은 추론하지 말 것.
+
+한국어로 작성."""
+
+
+def _gemini_response_text(response) -> str:
+    try:
+        t = (response.text or "").strip()
+        if t:
+            return t
+    except (ValueError, AttributeError):
+        pass
+    if not getattr(response, "candidates", None):
+        return "[Gemini: 응답 없음]"
+    cand = response.candidates[0]
+    parts = getattr(getattr(cand, "content", None), "parts", None) or []
+    return "".join(getattr(p, "text", "") or "" for p in parts).strip() or "[Gemini: 빈 응답]"
 
 TODAY = date.today()
 WEEK_AGO = TODAY - timedelta(days=7)
@@ -505,12 +555,7 @@ def build_sector_prompt_data(data: dict) -> str:
 
 
 def generate_sector_article(sector_name: str) -> str:
-    """섹터 심층 기사 생성 — DB 수치를 직접 주입해 Claude 창작 방지"""
-    import os, anthropic
-    api_key = os.getenv("ANTHROPIC_API_KEY", "")
-    if not api_key:
-        return "[ANTHROPIC_API_KEY 미설정]"
-
+    """섹터 심층 기사 — DB 수치 직입; LLM은 ARTICLE_LLM_PROVIDER(기본 Gemini)."""
     data = get_sector_data(sector_name)
     db_data = build_sector_prompt_data(data)
 
@@ -528,50 +573,96 @@ def generate_sector_article(sector_name: str) -> str:
 
 한국어로 작성."""
 
-    client = anthropic.Anthropic(api_key=api_key)
-    msg = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=2048,
-        messages=[{"role": "user", "content": prompt}]
-    )
-    return msg.content[0].text
+    return _generate_article_completion(prompt, max_tokens_claude=2048, max_tokens_gemini=4096)
+
+
+def generate_draft_gemini(trigger_summary: str, trigger_type: str) -> str:
+    """Gemini API로 주간 트리거 기사 초안."""
+    if not GEMINI_API_KEY:
+        return "[GEMINI_API_KEY 미설정 — Google AI Studio에서 발급 후 .env에 추가]"
+
+    try:
+        import google.generativeai as genai
+
+        genai.configure(api_key=GEMINI_API_KEY)
+        model = genai.GenerativeModel(GEMINI_MODEL)
+        prompt = _build_weekly_draft_prompt(trigger_summary, trigger_type)
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.types.GenerationConfig(
+                max_output_tokens=4096,
+                temperature=0.7,
+            ),
+        )
+        return _gemini_response_text(response)
+    except Exception as e:
+        return f"[Gemini API 오류: {e}]"
 
 
 def generate_draft_claude(trigger_summary: str, trigger_type: str) -> str:
-    """Claude API로 기사 초안 생성"""
-    import os
-    api_key = os.getenv("ANTHROPIC_API_KEY", "")
-    if not api_key or api_key.startswith("여기에"):
+    """Claude API로 주간 트리거 기사 초안."""
+    if not ANTHROPIC_API_KEY or (ANTHROPIC_API_KEY or "").startswith("여기에"):
         return "[ANTHROPIC_API_KEY 미설정 — .env에 키 추가 필요]"
 
     try:
         import anthropic
-        client = anthropic.Anthropic(api_key=api_key)
 
-        prompt = f"""아래 국회 입법 데이터를 바탕으로 기사 초안을 작성하세요.
-
-트리거 유형: {trigger_type}
-데이터:
-{trigger_summary}
-
-{NEWS_EPOCH_SYSTEM_PROMPT}
-
-[추가 지시]
-- 영향받는 대표 기업명을 구체적으로 언급. 추론 금지, 법안 내용과 직접 연결된 기업만.
-- 규제 법안은 비용·부담·리스크 각도로, 지원 법안은 수혜·기회·성장 각도로. 둘이 섞이면 구분 서술.
-- 데이터에 위원회 정보가 있으면 "○○위원회에 계류 중" 형태로 반드시 언급.
-- 법안 제안이유가 제공된 경우, 반드시 실제 내용만 인용. 제공 안 된 법안의 내용은 추론하지 말 것.
-
-한국어로 작성."""
-
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        prompt = _build_weekly_draft_prompt(trigger_summary, trigger_type)
         msg = client.messages.create(
-            model="claude-sonnet-4-6",
+            model=CLAUDE_ARTICLE_MODEL,
             max_tokens=2048,
-            messages=[{"role": "user", "content": prompt}]
+            messages=[{"role": "user", "content": prompt}],
         )
         return msg.content[0].text
     except Exception as e:
         return f"[Claude API 오류: {e}]"
+
+
+def generate_article_draft(trigger_summary: str, trigger_type: str) -> str:
+    """주간 트리거 기사 초안 — resolve_article_llm_provider()에 따라 Gemini 또는 Claude."""
+    if resolve_article_llm_provider() == "claude":
+        return generate_draft_claude(trigger_summary, trigger_type)
+    return generate_draft_gemini(trigger_summary, trigger_type)
+
+
+def _generate_article_completion(
+    prompt: str, *, max_tokens_claude: int, max_tokens_gemini: int
+) -> str:
+    """섹터 기사 등 긴 단발 프롬프트용."""
+    if resolve_article_llm_provider() == "claude":
+        if not ANTHROPIC_API_KEY:
+            return "[ANTHROPIC_API_KEY 미설정]"
+        try:
+            import anthropic
+
+            client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+            msg = client.messages.create(
+                model=CLAUDE_ARTICLE_MODEL,
+                max_tokens=max_tokens_claude,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return msg.content[0].text
+        except Exception as e:
+            return f"[Claude API 오류: {e}]"
+
+    if not GEMINI_API_KEY:
+        return "[GEMINI_API_KEY 미설정]"
+    try:
+        import google.generativeai as genai
+
+        genai.configure(api_key=GEMINI_API_KEY)
+        model = genai.GenerativeModel(GEMINI_MODEL)
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.types.GenerationConfig(
+                max_output_tokens=max_tokens_gemini,
+                temperature=0.7,
+            ),
+        )
+        return _gemini_response_text(response)
+    except Exception as e:
+        return f"[Gemini API 오류: {e}]"
 
 
 def save_to_obsidian(title: str, content: str) -> str:
@@ -595,7 +686,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--monthly", action="store_true", help="월간 리포트 모드")
     parser.add_argument("--slack",   action="store_true", help="Slack 전송 포함")
-    parser.add_argument("--draft",   action="store_true", help="Claude API 기사 초안 생성")
+    parser.add_argument(
+        "--draft",
+        action="store_true",
+        help="기사 초안 생성 (ARTICLE_LLM_PROVIDER 또는 GEMINI/Anthropic 키)",
+    )
     parser.add_argument("--sector",  type=str, default="", help=f"섹터 심층 기사 생성: {list(SECTOR_KSIC.keys())}")
     args = parser.parse_args()
 
@@ -682,8 +777,9 @@ def main():
                 key_data = "\n".join([f"- {b['bill_name']} ({b.get('committee_result','')})" for b in moved[:3]])
                 file_label = moved[0]["bill_name"][:15]
 
-            print(f"\n📝 Claude API로 기사 초안 생성 중... ({trigger_type})")
-            draft = generate_draft_claude(key_data, trigger_type)
+            llm = resolve_article_llm_provider()
+            print(f"\n📝 기사 초안 생성 중 ({llm}, {trigger_type})...")
+            draft = generate_article_draft(key_data, trigger_type)
             print("\n" + "=" * 65)
             print(draft)
             print("=" * 65)
