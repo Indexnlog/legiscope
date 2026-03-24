@@ -1,7 +1,7 @@
 .env
 .streamlit/secrets.toml
-# Local Cursor/Claude command snippets — not shared with team
-.claude/
+# Claude Code — commit settings/skills/rules, ignore local overrides
+.claude/settings.local.json
 __pycache__/
 *.pyc
 data/raw/
