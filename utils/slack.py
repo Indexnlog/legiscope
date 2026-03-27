@@ -172,9 +172,27 @@ def send_daily_brief(
     return notifier.send(fallback, blocks=blocks)
 
 
+def _extract_guard_block(draft: str) -> tuple[str, str]:
+    """초안에서 [Legiscope 자동 검사] 블록을 분리. (본문, 검사결과) 반환."""
+    marker = "[Legiscope 자동 검사]"
+    if marker not in draft:
+        return draft, ""
+    # ---\n[Legiscope 자동 검사]\n...\n--- 형태
+    search = "---\n" + marker
+    if search in draft:
+        idx = draft.index(search)
+    else:
+        idx = draft.index(marker)
+    return draft[:idx].rstrip(), draft[idx:].strip()
+
+
 def send_article_draft(title: str, draft: str, date_str: str) -> bool:
-    """기사 초안 — 헤더·제목은 mrkdwn, 본문은 코드 펜스(슬랙에서 ** 등 포맷 깨짐 방지). 길면 스레드 연속."""
+    """기사 초안 — 헤더·제목은 mrkdwn, 본문은 코드 펜스(슬랙에서 ** 등 포맷 깨짐 방지). 길면 스레드 연속.
+    [Legiscope 자동 검사] 블록이 있으면 별도 편집자 체크리스트로 분리."""
     notifier = SlackNotifier()
+
+    # 자동 검사 블록 분리
+    body_text, guard_text = _extract_guard_block(draft)
 
     fallback = f"입법 레이더 기사 초안 ({date_str}) — {title}"
     title_esc = _slack_escape_mrkdwn(title)
@@ -193,12 +211,26 @@ def send_article_draft(title: str, draft: str, date_str: str) -> bool:
         {"type": "divider"},
     ]
 
-    chunks = _chunk_text(draft.strip(), _MRDKWN_CHUNK - 8)
+    chunks = _chunk_text(body_text.strip(), _MRDKWN_CHUNK - 8)
     if not chunks:
         chunks = ["(본문 없음)"]
 
     first_body = _fence_code(chunks[0])
     blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": first_body}})
+
+    # 편집자 체크리스트 블록 (자동 검사 결과가 있을 때)
+    if guard_text:
+        guard_clean = guard_text.replace("---\n", "").replace("\n---", "").strip()
+        blocks.append({"type": "divider"})
+        blocks.append(
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f":warning: *편집자 체크리스트*\n```{guard_clean[:2500]}```",
+                },
+            }
+        )
 
     resp = notifier.post_message(text=fallback, blocks=blocks)
     if resp is None and not notifier.is_enabled():

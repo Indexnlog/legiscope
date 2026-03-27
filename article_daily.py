@@ -17,6 +17,7 @@ from datetime import date, timedelta
 from collections import defaultdict
 from db.client import get_client
 from dotenv import load_dotenv
+from config import resolve_news_epoch_article_draft_dir
 from article_weekly import (
     build_weekly_trigger_whitelist,
     generate_article_draft,
@@ -245,13 +246,10 @@ def _daily_source_facts_and_whitelist(top: dict) -> tuple[str, frozenset[str]]:
 
 
 def save_to_obsidian(title: str, content: str):
-    obsidian_dir = (
-        r"C:\Users\ekapr\Dropbox\앱\remotely-save\Second_Brain"
-        r"\20_Projects_Builder\21_News_Epoch\2026 입법레이더-Legiscope\01_기사초안"
-    )
+    obsidian_dir = resolve_news_epoch_article_draft_dir()
     os.makedirs(obsidian_dir, exist_ok=True)
     filename = f"{TODAY} {title[:20].replace('/', '-')}.md"
-    path = os.path.join(obsidian_dir, filename)
+    path = os.path.join(str(obsidian_dir), filename)
     with open(path, "w", encoding="utf-8") as f:
         f.write(f"---\ntags: [legiscope, 입법레이더, 기사, 자동생성]\ndate: {TODAY}\nstatus: 초안(AI)\n---\n\n")
         f.write(content)
@@ -284,16 +282,8 @@ def main():
     print("\n" + brief)
 
     if not triggers:
-        if args.slack:
-            from utils.slack import send_daily_brief
-
-            send_daily_brief(
-                brief,
-                YESTERDAY_STR,
-                has_triggers=False,
-                passed_count=len(passed_bills),
-                proposed_count=len(proposed_bills),
-            )
+        # 기사감 없으면 Slack 전송 생략 (주간은 헬스체크 겸 전송, 일간은 노이즈 방지)
+        print("[OK] 오늘 기사감 없음 → Slack 전송 생략")
         return
 
     if args.slack:
@@ -317,22 +307,22 @@ def main():
                     _ids.append(str(bid))
         record_brief_bill_ids("daily", _ids)
 
-    # 가장 강한 트리거로 초안 생성 (article_weekly와 동일 파이프라인)
+    # 복수 트리거 초안 생성 (상위 3개까지)
     if args.draft:
-        top = triggers[0]
-        key_data, name_wl = _daily_source_facts_and_whitelist(top)
         llm = resolve_article_llm_provider()
-        print(f"\n📝 기사 초안 생성 중 ({llm}, {top['type']})...")
-        draft = generate_article_draft(
-            key_data, top["type"], name_whitelist=name_wl
-        )
-        print("\n" + "=" * 65)
-        print(draft)
-        print("=" * 65)
-        save_to_obsidian(top["type"], draft)
-        if args.slack:
-            from utils.slack import send_article_draft
-            send_article_draft(top["type"], draft, str(TODAY))
+        for i, trig in enumerate(triggers[:3]):
+            key_data, name_wl = _daily_source_facts_and_whitelist(trig)
+            print(f"\n📝 기사 초안 생성 중 [{i+1}/{min(len(triggers),3)}] ({llm}, {trig['type']})...")
+            draft = generate_article_draft(
+                key_data, trig["type"], name_whitelist=name_wl
+            )
+            print("\n" + "=" * 65)
+            print(draft)
+            print("=" * 65)
+            save_to_obsidian(trig["type"], draft)
+            if args.slack:
+                from utils.slack import send_article_draft
+                send_article_draft(trig["type"], draft, str(TODAY))
 
 
 if __name__ == "__main__":

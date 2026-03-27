@@ -3,7 +3,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 
 def _get(key: str) -> str | None:
@@ -31,12 +31,41 @@ GEMINI_MODEL = _get("GEMINI_MODEL") or "gemini-2.5-flash"
 ANTHROPIC_API_KEY = _get("ANTHROPIC_API_KEY")
 CLAUDE_ARTICLE_MODEL = _get("CLAUDE_ARTICLE_MODEL") or "claude-sonnet-4-6"
 
+# NEWS EPOCH Obsidian/Dropbox 경로. 미설정 시 현재 Second_Brain 기준 기본 경로 사용.
+NEWS_EPOCH_OBSIDIAN_ROOT = _get("NEWS_EPOCH_OBSIDIAN_ROOT")
+NEWS_EPOCH_ARTICLE_DRAFT_DIR = _get("NEWS_EPOCH_ARTICLE_DRAFT_DIR")
+
+_DEFAULT_NEWS_EPOCH_OBSIDIAN_ROOT = Path(
+    r"C:\Users\ekapr\Dropbox\앱\remotely-save\Second_Brain"
+)
+_DEFAULT_NEWS_EPOCH_ARTICLE_DRAFT_DIR = (
+    _DEFAULT_NEWS_EPOCH_OBSIDIAN_ROOT
+    / "20_Projects_Builder"
+    / "21_NEWS EPOCH"
+    / "2026 입법레이더-Legiscope"
+    / "01_기사초안"
+)
+
 # NEWS EPOCH Obsidian 작성 지침 (.md). 미설정 시 아래 경로에 파일이 있으면 자동 로드.
 NEWS_EPOCH_GUIDELINE_PATH = _get("NEWS_EPOCH_GUIDELINE_PATH")
-_DEFAULT_NEWS_EPOCH_GUIDE = Path(
-    r"C:\Users\ekapr\Dropbox\앱\remotely-save\Second_Brain\20_Projects_Builder"
-    r"\21_NEWS EPOCH\NEWS EPOCH 작성 지침.md"
+_DEFAULT_NEWS_EPOCH_GUIDE = (
+    _DEFAULT_NEWS_EPOCH_OBSIDIAN_ROOT
+    / "20_Projects_Builder"
+    / "21_NEWS EPOCH"
+    / "NEWS EPOCH 작성 지침.md"
 )
+
+
+def resolve_news_epoch_obsidian_root() -> Path:
+    if NEWS_EPOCH_OBSIDIAN_ROOT:
+        return Path(NEWS_EPOCH_OBSIDIAN_ROOT)
+    return _DEFAULT_NEWS_EPOCH_OBSIDIAN_ROOT
+
+
+def resolve_news_epoch_article_draft_dir() -> Path:
+    if NEWS_EPOCH_ARTICLE_DRAFT_DIR:
+        return Path(NEWS_EPOCH_ARTICLE_DRAFT_DIR)
+    return _DEFAULT_NEWS_EPOCH_ARTICLE_DRAFT_DIR
 
 
 def resolve_news_epoch_guideline_path() -> Path | None:

@@ -49,12 +49,13 @@ def enrich_bills(limit: int = 200, bill_ids: list[str] | None = None):
         # 특정 bill_id 목록 처리
         rows = db.table("bills").select("bill_id,bill_name").in_("bill_id", bill_ids).execute().data
     else:
-        # proposal_reason이 NULL인 22대 법안
+        # proposal_reason이 NULL인 22대 법안 — 최신 발의 우선
         rows = (
             db.table("bills")
             .select("bill_id,bill_name")
             .is_("proposal_reason", "null")
             .eq("age", "22")
+            .order("propose_dt", desc=True)
             .limit(limit)
             .execute()
             .data
