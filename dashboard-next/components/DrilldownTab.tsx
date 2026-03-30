@@ -88,14 +88,9 @@ export default function DrilldownTab({ signals, initialKsic }: DrilldownTabProps
 
   return (
     <div className="space-y-5">
-      {/* pdeck 연동 안내 */}
-      <div className="rounded-lg px-4 py-2.5 text-[11px] text-gray-500 border border-dashed border-gray-300 bg-gray-50">
-        📌 pdeck 연동 시 기업의 KSIC 코드가 자동 주입되어 해당 산업으로 고정됩니다.
-      </div>
-
       {/* 산업 선택 */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-        <label className="block text-[11px] text-gray-500 mb-2 font-medium tracking-wide uppercase">산업 선택 (KSIC 중분류)</label>
+      <div className="bg-white rounded-xl border border-slate-200 p-4">
+        <label className="block text-[11px] text-slate-400 mb-2 font-medium">산업 선택 (KSIC 중분류)</label>
         <select
           value={selected}
           onChange={e => setSelected(e.target.value)}
@@ -121,7 +116,7 @@ export default function DrilldownTab({ signals, initialKsic }: DrilldownTabProps
               { label: '계류 중', value: signal.pending_bills.toLocaleString(), color: '#f59e0b' },
               { label: 'risk_score', value: (signal.risk_score ?? 0).toFixed(2), color: '#f04452' },
             ].map(c => (
-              <div key={c.label} className="rounded-xl p-4 text-center bg-white border border-gray-200 shadow-sm">
+              <div key={c.label} className="rounded-xl p-4 text-center bg-white border border-slate-200">
                 <div className="text-[11px] text-gray-500 mb-1">{c.label}</div>
                 <div className="text-xl font-bold" style={{ color: c.color }}>{c.value}</div>
               </div>
@@ -130,7 +125,7 @@ export default function DrilldownTab({ signals, initialKsic }: DrilldownTabProps
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             {/* 규제 유형 파이 */}
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
               <div className="px-5 pt-5 pb-1">
                 <h3 className="text-[15px] font-bold tracking-tight" style={{ color: '#1B2745' }}>규제 유형 분포</h3>
               </div>
@@ -164,7 +159,7 @@ export default function DrilldownTab({ signals, initialKsic }: DrilldownTabProps
             </div>
 
             {/* 연도별 발의 추이 */}
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
               <div className="px-5 pt-5 pb-1">
                 <h3 className="text-[15px] font-bold tracking-tight" style={{ color: '#1B2745' }}>연도별 발의 추이</h3>
                 <p className="text-[11px] text-gray-400 mt-0.5">최근 50건 기준</p>
@@ -190,7 +185,7 @@ export default function DrilldownTab({ signals, initialKsic }: DrilldownTabProps
           </div>
 
           {/* 법안 목록 테이블 */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
             <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 bg-gray-50">
               <h3 className="text-sm font-semibold" style={{ color: '#1B2745' }}>관련 법안 목록</h3>
               <span className="text-xs text-gray-400">{bills.length}건 표시</span>

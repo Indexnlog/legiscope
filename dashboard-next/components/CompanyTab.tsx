@@ -109,7 +109,7 @@ export default function CompanyTab({ signals }: CompanyTabProps) {
   return (
     <div className="space-y-6">
       {/* 검색 폼 */}
-      <div className="rounded-xl p-5 bg-white" style={{ border: '1px solid #e2e8f0' }}>
+      <div className="rounded-xl p-5 bg-white" className="border border-slate-200">
         <h3 className="text-sm font-semibold text-slate-700 mb-3">🏢 기업 산업 조회</h3>
         <div className="flex flex-col sm:flex-row gap-3">
           <input
@@ -118,7 +118,7 @@ export default function CompanyTab({ signals }: CompanyTabProps) {
             value={companyName}
             onChange={e => setCompanyName(e.target.value)}
             className="flex-1 rounded-lg px-3 py-2 text-sm text-slate-700 bg-white"
-            style={{ border: '1px solid #e2e8f0' }}
+            className="border border-slate-200"
           />
           <input
             type="text"
@@ -127,7 +127,7 @@ export default function CompanyTab({ signals }: CompanyTabProps) {
             onChange={e => setKsicInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleSearch()}
             className="flex-1 rounded-lg px-3 py-2 text-sm text-slate-700 bg-white font-mono"
-            style={{ border: '1px solid #e2e8f0' }}
+            className="border border-slate-200"
           />
           <button
             onClick={() => handleSearch()}
@@ -158,7 +158,7 @@ export default function CompanyTab({ signals }: CompanyTabProps) {
 
       {/* 결과 없음 */}
       {searched && noSignal && (
-        <div className="rounded-xl p-5 text-center bg-white" style={{ border: '1px solid #e2e8f0' }}>
+        <div className="rounded-xl p-5 text-center bg-white" className="border border-slate-200">
           <p className="text-slate-500 text-sm">KSIC <span className="font-mono font-semibold">{searched.code3}</span>에 해당하는 산업 데이터가 없습니다.</p>
           <p className="text-slate-400 text-xs mt-1">5자리 코드를 입력하면 앞 3자리로 자동 매핑됩니다.</p>
         </div>
@@ -168,7 +168,7 @@ export default function CompanyTab({ signals }: CompanyTabProps) {
       {searched && signal && (
         <>
           {/* 기업·산업 헤더 */}
-          <div className="rounded-xl p-5 bg-white" style={{ border: '1px solid #e2e8f0' }}>
+          <div className="rounded-xl p-5 bg-white" className="border border-slate-200">
             <div className="flex flex-wrap items-center gap-3">
               <div>
                 <p className="text-xs text-slate-400">기업</p>
@@ -201,7 +201,7 @@ export default function CompanyTab({ signals }: CompanyTabProps) {
               { label: '계류 중', value: signal.pending_bills.toLocaleString(), color: '#f59e0b' },
               { label: 'risk_score', value: (signal.risk_score ?? 0).toFixed(2), color: '#ef4444' },
             ].map(c => (
-              <div key={c.label} className="rounded-xl p-4 text-center bg-white" style={{ border: '1px solid #e2e8f0' }}>
+              <div key={c.label} className="rounded-xl p-4 text-center bg-white" className="border border-slate-200">
                 <div className="text-xs text-slate-500 mb-1">{c.label}</div>
                 <div className="text-xl font-bold" style={{ color: c.color }}>{c.value}</div>
               </div>
@@ -210,7 +210,7 @@ export default function CompanyTab({ signals }: CompanyTabProps) {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* 규제 유형 파이 */}
-            <div className="rounded-xl p-5 bg-white" style={{ border: '1px solid #e2e8f0' }}>
+            <div className="rounded-xl p-5 bg-white" className="border border-slate-200">
               <h3 className="text-sm font-semibold text-slate-700 mb-4">🏷️ 규제 유형 분포</h3>
               {regData.some(d => d.value > 0) ? (
                 <ResponsiveContainer width="100%" height={220}>
@@ -237,7 +237,7 @@ export default function CompanyTab({ signals }: CompanyTabProps) {
             </div>
 
             {/* 연도별 추이 */}
-            <div className="rounded-xl p-5 bg-white" style={{ border: '1px solid #e2e8f0' }}>
+            <div className="rounded-xl p-5 bg-white" className="border border-slate-200">
               <h3 className="text-sm font-semibold text-slate-700 mb-4">📅 연도별 발의 추이 (최근 50건 기준)</h3>
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={yearData}>
@@ -255,7 +255,7 @@ export default function CompanyTab({ signals }: CompanyTabProps) {
           </div>
 
           {/* 법안 목록 */}
-          <div className="rounded-xl overflow-hidden bg-white" style={{ border: '1px solid #e2e8f0' }}>
+          <div className="rounded-xl overflow-hidden bg-white" className="border border-slate-200">
             <div className="px-5 py-3 flex items-center justify-between" style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
               <h3 className="text-sm font-semibold text-slate-700">📋 관련 법안 목록</h3>
               <span className="text-xs text-slate-400">{bills.length}건 표시</span>
