@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react'
 import {
-  PieChart, Pie, Cell, Legend, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
 } from 'recharts'
 import type { IndustrySignal, Bill } from '@/lib/types'
@@ -16,25 +16,23 @@ interface CompanyTabProps {
 const PASS_RESULTS = new Set(['원안가결', '수정가결'])
 
 function getBadgeStyle(type: string | null) {
-  if (!type) return { bg: '#f1f5f9', text: '#94a3b8' }
-  if (type === '규제') return { bg: '#fee2e2', text: '#dc2626' }
-  if (type === '지원') return { bg: '#dcfce7', text: '#16a34a' }
-  return { bg: '#f1f5f9', text: '#64748b' }
+  if (type === '규제') return 'bg-rose-50 text-rose-600 border-rose-100'
+  if (type === '지원') return 'bg-teal-50 text-teal-600 border-teal-100'
+  return 'bg-slate-50 text-slate-400 border-slate-100'
 }
 
-function getRiskBadge(score: number) {
-  if (score >= 5) return { label: 'High 🔴', bg: '#fee2e2', text: '#dc2626' }
-  if (score >= 2) return { label: 'Mid 🟡', bg: '#fef9c3', text: '#b45309' }
-  return { label: 'Low 🟢', bg: '#dcfce7', text: '#15803d' }
+function getRiskLevel(score: number) {
+  if (score >= 5) return { label: 'High', color: '#e11d48', bg: '#fff1f2' }
+  if (score >= 2) return { label: 'Mid', color: '#d97706', bg: '#fffbeb' }
+  return { label: 'Low', color: '#0d9488', bg: '#f0fdfa' }
 }
 
-// 샘플 기업 예시 (입력 도우미용)
 const SAMPLE_COMPANIES = [
   { name: '삼성전자', ksic: '26111', desc: '반도체 제조' },
   { name: '카카오', ksic: '63120', desc: '포털·SNS' },
   { name: '현대자동차', ksic: '30100', desc: '자동차 제조' },
   { name: '셀트리온', ksic: '21201', desc: '의약품 제조' },
-  { name: 'LG에너지솔루션', ksic: '27400', desc: '이차전지·전기장치' },
+  { name: 'LG에너지솔루션', ksic: '27400', desc: '이차전지' },
 ]
 
 export default function CompanyTab({ signals }: CompanyTabProps) {
@@ -50,11 +48,7 @@ export default function CompanyTab({ signals }: CompanyTabProps) {
   const loadBills = useCallback(async (code: string, p: number) => {
     setLoading(true)
     try {
-      const { data } = await supabase.rpc('bills_by_ksic3', {
-        p_code: code,
-        p_offset: p * 50,
-        p_limit: 50,
-      })
+      const { data } = await supabase.rpc('bills_by_ksic3', { p_code: code, p_offset: p * 50, p_limit: 50 })
       if (!data) return
       setBills(prev => p === 0 ? (data as Bill[]) : [...prev, ...(data as Bill[])])
       setHasMore((data as Bill[]).length === 50)
@@ -89,9 +83,9 @@ export default function CompanyTab({ signals }: CompanyTabProps) {
     : null
 
   const regData = signal ? [
-    { name: '규제', value: signal.reg_count ?? 0, color: '#ef4444' },
-    { name: '지원', value: signal.support_count ?? 0, color: '#22c55e' },
-    { name: '중립', value: signal.neutral_count ?? 0, color: '#94a3b8' },
+    { name: '규제', value: signal.reg_count ?? 0, color: '#e11d48' },
+    { name: '지원', value: signal.support_count ?? 0, color: '#0d9488' },
+    { name: '중립', value: signal.neutral_count ?? 0, color: '#cbd5e1' },
   ] : []
 
   const yearMap = new Map<string, number>()
@@ -104,187 +98,177 @@ export default function CompanyTab({ signals }: CompanyTabProps) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([year, count]) => ({ year, count }))
 
-  const riskBadge = signal ? getRiskBadge(signal.risk_score ?? 0) : null
+  const risk = signal ? getRiskLevel(signal.risk_score ?? 0) : null
 
   return (
     <div className="space-y-6">
-      {/* 검색 폼 */}
-      <div className="rounded-xl p-5 bg-white" className="border border-slate-200">
-        <h3 className="text-sm font-semibold text-slate-700 mb-3">🏢 기업 산업 조회</h3>
-        <div className="flex flex-col sm:flex-row gap-3">
+      {/* 검색 */}
+      <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <p className="text-[11px] text-slate-400 mb-3">기업명과 KSIC 코드를 입력하세요</p>
+        <div className="flex flex-col sm:flex-row gap-2">
           <input
             type="text"
-            placeholder="기업명 (예: 삼성전자)"
+            placeholder="기업명"
             value={companyName}
             onChange={e => setCompanyName(e.target.value)}
-            className="flex-1 rounded-lg px-3 py-2 text-sm text-slate-700 bg-white"
-            className="border border-slate-200"
+            className="flex-1 rounded-lg px-3 py-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-slate-300"
           />
           <input
             type="text"
-            placeholder="KSIC 코드 (예: 26111)"
+            placeholder="KSIC 코드"
             value={ksicInput}
             onChange={e => setKsicInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleSearch()}
-            className="flex-1 rounded-lg px-3 py-2 text-sm text-slate-700 bg-white font-mono"
-            className="border border-slate-200"
+            className="flex-1 rounded-lg px-3 py-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 font-mono focus:outline-none focus:ring-1 focus:ring-slate-300"
           />
           <button
             onClick={() => handleSearch()}
-            className="px-5 py-2 rounded-lg text-sm font-medium text-white"
-            style={{ background: '#2563eb' }}
+            className="px-5 py-2 rounded-lg text-sm font-medium bg-slate-800 text-white hover:bg-slate-700 transition-colors"
           >
             조회
           </button>
         </div>
-
-        {/* 샘플 기업 */}
-        <div className="mt-3">
-          <p className="text-xs text-slate-400 mb-2">샘플 기업으로 바로 보기:</p>
-          <div className="flex flex-wrap gap-2">
-            {SAMPLE_COMPANIES.map(s => (
-              <button
-                key={s.name}
-                onClick={() => fillSample(s)}
-                className="px-3 py-1 rounded-full text-xs font-medium transition-colors"
-                style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0' }}
-              >
-                {s.name} <span className="text-slate-400">({s.desc})</span>
-              </button>
-            ))}
-          </div>
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {SAMPLE_COMPANIES.map(s => (
+            <button
+              key={s.name}
+              onClick={() => fillSample(s)}
+              className="px-2.5 py-1 rounded-md text-[11px] text-slate-500 bg-slate-50 border border-slate-150 hover:bg-slate-100 transition-colors"
+            >
+              {s.name} <span className="text-slate-400">{s.desc}</span>
+            </button>
+          ))}
         </div>
       </div>
 
       {/* 결과 없음 */}
       {searched && noSignal && (
-        <div className="rounded-xl p-5 text-center bg-white" className="border border-slate-200">
-          <p className="text-slate-500 text-sm">KSIC <span className="font-mono font-semibold">{searched.code3}</span>에 해당하는 산업 데이터가 없습니다.</p>
-          <p className="text-slate-400 text-xs mt-1">5자리 코드를 입력하면 앞 3자리로 자동 매핑됩니다.</p>
+        <div className="rounded-xl border border-slate-200 bg-white p-8 text-center">
+          <p className="text-slate-500 text-sm">KSIC <span className="font-mono font-semibold">{searched.code3}</span>에 해당하는 데이터가 없습니다.</p>
+          <p className="text-slate-400 text-xs mt-1">5자리 코드 입력 시 앞 3자리(중분류)로 매핑됩니다.</p>
         </div>
       )}
 
       {/* 결과 */}
       {searched && signal && (
         <>
-          {/* 기업·산업 헤더 */}
-          <div className="rounded-xl p-5 bg-white" className="border border-slate-200">
-            <div className="flex flex-wrap items-center gap-3">
+          {/* 기업 요약 카드 */}
+          <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+            {/* 상단 헤더 */}
+            <div className="px-6 py-5 flex items-start justify-between">
               <div>
-                <p className="text-xs text-slate-400">기업</p>
-                <p className="text-lg font-bold text-slate-800">{searched.name}</p>
-              </div>
-              <div className="text-slate-200 text-xl">|</div>
-              <div>
-                <p className="text-xs text-slate-400">산업 (KSIC 중분류)</p>
-                <p className="text-base font-semibold text-slate-700">
+                <p className="text-2xl font-bold text-slate-800">{searched.name}</p>
+                <p className="text-sm text-slate-400 mt-0.5">
                   [{signal.ksic_code}] {getKsicName(signal.ksic_code)}
                 </p>
               </div>
-              {riskBadge && (
-                <span
-                  className="ml-auto px-3 py-1 rounded-full text-sm font-bold"
-                  style={{ background: riskBadge.bg, color: riskBadge.text }}
+              {risk && (
+                <div
+                  className="px-4 py-2 rounded-lg text-sm font-bold border"
+                  style={{ background: risk.bg, color: risk.color, borderColor: risk.color + '30' }}
                 >
-                  규제리스크 {riskBadge.label}
-                </span>
+                  {risk.label} Risk
+                </div>
               )}
+            </div>
+
+            {/* 지표 그리드 */}
+            <div className="grid grid-cols-5 border-t border-slate-100">
+              {[
+                { label: '총 발의', value: signal.total_bills.toLocaleString() },
+                { label: '가결', value: signal.passed_bills.toLocaleString() },
+                { label: '가결률', value: (signal.pass_rate ?? 0).toFixed(1) + '%' },
+                { label: '계류', value: signal.pending_bills.toLocaleString() },
+                { label: 'risk_score', value: (signal.risk_score ?? 0).toFixed(1) },
+              ].map((c, i) => (
+                <div
+                  key={c.label}
+                  className={`px-4 py-3 text-center ${i < 4 ? 'border-r border-slate-100' : ''}`}
+                >
+                  <p className="text-[10px] text-slate-400 mb-0.5">{c.label}</p>
+                  <p className="text-lg font-bold text-slate-700 tabular-nums">{c.value}</p>
+                </div>
+              ))}
             </div>
           </div>
 
-          {/* 지표 카드 */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            {[
-              { label: '총 발의', value: signal.total_bills.toLocaleString(), color: '#3b82f6' },
-              { label: '본회의 가결', value: signal.passed_bills.toLocaleString(), color: '#22c55e' },
-              { label: '가결률', value: (signal.pass_rate ?? 0).toFixed(1) + '%', color: '#10b981' },
-              { label: '계류 중', value: signal.pending_bills.toLocaleString(), color: '#f59e0b' },
-              { label: 'risk_score', value: (signal.risk_score ?? 0).toFixed(2), color: '#ef4444' },
-            ].map(c => (
-              <div key={c.label} className="rounded-xl p-4 text-center bg-white" className="border border-slate-200">
-                <div className="text-xs text-slate-500 mb-1">{c.label}</div>
-                <div className="text-xl font-bold" style={{ color: c.color }}>{c.value}</div>
-              </div>
-            ))}
-          </div>
-
+          {/* 차트 2-col */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* 규제 유형 파이 */}
-            <div className="rounded-xl p-5 bg-white" className="border border-slate-200">
-              <h3 className="text-sm font-semibold text-slate-700 mb-4">🏷️ 규제 유형 분포</h3>
+            {/* 규제 유형 */}
+            <div className="rounded-xl border border-slate-200 bg-white p-5">
+              <h3 className="text-sm font-semibold text-slate-700 mb-3">규제 유형 분포</h3>
               {regData.some(d => d.value > 0) ? (
-                <ResponsiveContainer width="100%" height={220}>
+                <ResponsiveContainer width="100%" height={200}>
                   <PieChart>
                     <Pie
                       data={regData.filter(d => d.value > 0)}
                       cx="50%" cy="50%"
-                      innerRadius={50} outerRadius={85}
+                      innerRadius={50} outerRadius={80}
                       paddingAngle={2} dataKey="value"
                       label={({ name, percent }) => `${name} ${(percent * 100).toFixed(1)}%`}
+                      labelLine={{ stroke: '#cbd5e1' }}
                     >
                       {regData.map((d, i) => <Cell key={i} fill={d.color} />)}
                     </Pie>
                     <Tooltip
-                      contentStyle={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 8 }}
+                      contentStyle={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8 }}
                       formatter={(v: number) => [v.toLocaleString() + '건', '']}
                     />
-                    <Legend wrapperStyle={{ color: '#64748b', fontSize: 12 }} />
                   </PieChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="h-[220px] flex items-center justify-center text-slate-400 text-sm">데이터 없음</div>
+                <div className="h-[200px] flex items-center justify-center text-slate-400 text-sm">데이터 없음</div>
               )}
             </div>
 
             {/* 연도별 추이 */}
-            <div className="rounded-xl p-5 bg-white" className="border border-slate-200">
-              <h3 className="text-sm font-semibold text-slate-700 mb-4">📅 연도별 발의 추이 (최근 50건 기준)</h3>
-              <ResponsiveContainer width="100%" height={220}>
+            <div className="rounded-xl border border-slate-200 bg-white p-5">
+              <h3 className="text-sm font-semibold text-slate-700 mb-3">연도별 발의 추이</h3>
+              <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={yearData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                   <XAxis dataKey="year" tick={{ fill: '#94a3b8', fontSize: 11 }} />
                   <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} />
                   <Tooltip
-                    contentStyle={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 8 }}
+                    contentStyle={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8 }}
                     formatter={(v: number) => [v + '건', '']}
                   />
-                  <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="count" fill="#475569" radius={[3, 3, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           </div>
 
           {/* 법안 목록 */}
-          <div className="rounded-xl overflow-hidden bg-white" className="border border-slate-200">
-            <div className="px-5 py-3 flex items-center justify-between" style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-              <h3 className="text-sm font-semibold text-slate-700">📋 관련 법안 목록</h3>
-              <span className="text-xs text-slate-400">{bills.length}건 표시</span>
+          <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+            <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-slate-700">관련 법안</h3>
+              <span className="text-[11px] text-slate-400">{bills.length}건</span>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-xs bg-white">
+              <table className="w-full text-xs">
                 <thead>
-                  <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                  <tr className="bg-slate-50 border-b border-slate-100">
                     {['발의일', '법안명', '소관위원회', '처리결과', '유형'].map(h => (
-                      <th key={h} className="px-3 py-2 text-left text-slate-500 font-medium whitespace-nowrap">{h}</th>
+                      <th key={h} className="px-3 py-2.5 text-left text-slate-400 font-medium whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {bills.map((b, i) => {
-                    const badge = getBadgeStyle(b.regulation_type)
                     const passed = PASS_RESULTS.has(b.proc_result_cd ?? '')
                     return (
-                      <tr key={b.bill_id} style={{ borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? '#ffffff' : '#fafafa' }}>
-                        <td className="px-3 py-2 text-slate-400 whitespace-nowrap">{b.propose_dt?.slice(0, 10) ?? '-'}</td>
+                      <tr key={b.bill_id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                        <td className="px-3 py-2 text-slate-400 whitespace-nowrap font-mono text-[11px]">{b.propose_dt?.slice(0, 10) ?? '-'}</td>
                         <td className="px-3 py-2 text-slate-700 max-w-xs truncate" title={b.bill_name}>{b.bill_name}</td>
                         <td className="px-3 py-2 text-slate-400 whitespace-nowrap max-w-[140px] truncate">{b.committee ?? '-'}</td>
                         <td className="px-3 py-2 whitespace-nowrap">
-                          <span style={{ color: passed ? '#16a34a' : b.proc_result_cd ? '#94a3b8' : '#cbd5e1' }}>
+                          <span className={passed ? 'text-teal-600 font-medium' : 'text-slate-400'}>
                             {b.proc_result_cd ?? '계류 중'}
                           </span>
                         </td>
                         <td className="px-3 py-2 whitespace-nowrap">
-                          <span className="px-2 py-0.5 rounded text-xs font-medium" style={{ background: badge.bg, color: badge.text }}>
+                          <span className={`px-2 py-0.5 rounded border text-[11px] font-medium ${getBadgeStyle(b.regulation_type)}`}>
                             {b.regulation_type ?? '미분류'}
                           </span>
                         </td>
@@ -295,14 +279,13 @@ export default function CompanyTab({ signals }: CompanyTabProps) {
               </table>
             </div>
             {hasMore && (
-              <div className="px-5 py-3 text-center" style={{ background: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
+              <div className="px-5 py-3 text-center border-t border-slate-100">
                 <button
                   onClick={() => { const next = page + 1; setPage(next); loadBills(searched.code3, next) }}
                   disabled={loading}
-                  className="px-4 py-1.5 rounded-lg text-xs font-medium"
-                  style={{ background: '#2563eb', color: '#fff', opacity: loading ? 0.5 : 1 }}
+                  className="px-4 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-white hover:bg-slate-700 transition-colors disabled:opacity-50"
                 >
-                  {loading ? '불러오는 중…' : '더 보기 (+50건)'}
+                  {loading ? '불러오는 중...' : '더 보기'}
                 </button>
               </div>
             )}

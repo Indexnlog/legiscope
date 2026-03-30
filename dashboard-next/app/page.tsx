@@ -9,10 +9,10 @@ import DrilldownTab from '@/components/DrilldownTab'
 import CompanyTab from '@/components/CompanyTab'
 
 const TABS = [
-  { id: 'process', label: '입법 프로세스' },
-  { id: 'risk', label: '산업별 리스크' },
-  { id: 'drilldown', label: '산업 드릴다운' },
-  { id: 'company', label: '기업 조회' },
+  { id: 'process', label: '입법 프로세스', service: '' },
+  { id: 'risk', label: '산업별 리스크', service: 'pdeck Macro > 금융 및 리스크' },
+  { id: 'drilldown', label: '산업 드릴다운', service: 'pdeck 기업정보 > 산업정보' },
+  { id: 'company', label: '기업 조회', service: 'pdeck 기업정보 > 규제리스크' },
 ]
 
 export interface OverallStats {
@@ -149,15 +149,15 @@ export default function Dashboard() {
         </div>
 
         {/* 탭 */}
-        <nav className="max-w-7xl mx-auto px-6 flex gap-6 overflow-x-auto">
+        <nav className="max-w-7xl mx-auto px-6 flex gap-1.5 overflow-x-auto pt-1 pb-2">
           {TABS.map(t => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`pb-2.5 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${
+              className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all whitespace-nowrap ${
                 tab === t.id
-                  ? 'text-blue-600 border-blue-600'
-                  : 'text-slate-400 border-transparent hover:text-slate-600'
+                  ? 'bg-slate-800 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'
               }`}
             >
               {t.label}
@@ -168,6 +168,14 @@ export default function Dashboard() {
 
       {/* 콘텐츠 */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+        {(() => {
+          const current = TABS.find(t => t.id === tab)
+          return current?.service ? (
+            <p className="text-[11px] text-slate-400 mb-4">
+              <span className="text-blue-500 font-medium">서비스 노출:</span> {current.service}
+            </p>
+          ) : null
+        })()}
         {tab === 'process' && stats && <ProcessTab stats={stats} />}
         {tab === 'risk' && <RiskTab signals={signals} asOf={asOf} onDrilldown={goToDrilldown} />}
         {tab === 'drilldown' && <DrilldownTab signals={signals} initialKsic={drilldownKsic} />}

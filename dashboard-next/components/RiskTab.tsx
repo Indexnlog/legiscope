@@ -160,64 +160,71 @@ export default function RiskTab({ signals, asOf, onDrilldown }: RiskTabProps) {
         </div>
       </div>
 
-      {/* 전체 산업 테이블 */}
-      <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-        <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-slate-700">전체 산업 리스크 랭킹</h3>
-          <span className="text-[11px] text-slate-400">{industries.length}개 산업</span>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-100">
-                {['#', '산업', 'risk_score', '총 발의', '가결', '가결률', '규제 비율', '90일 활성'].map(h => (
-                  <th key={h} className="px-3 py-2.5 text-left text-slate-500 font-medium whitespace-nowrap">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {[...industries]
-                .sort((a, b) => (b.risk_score ?? 0) - (a.risk_score ?? 0))
-                .map((s, i) => {
-                  const maxR = industries[0] ? Math.max(...industries.map(x => x.risk_score ?? 0)) : 1
-                  const pct = maxR > 0 ? (s.risk_score ?? 0) / maxR : 0
-                  return (
-                    <tr
-                      key={s.ksic_code}
-                      className="border-b border-slate-50 hover:bg-blue-50/50 cursor-pointer transition-colors"
-                      onClick={() => onDrilldown?.(s.ksic_code)}
-                    >
-                      <td className="px-3 py-2.5 text-slate-400 font-mono">{i + 1}</td>
-                      <td className="px-3 py-2.5 text-slate-700 font-medium whitespace-nowrap">
-                        {getKsicName(s.ksic_code)}
-                        <span className="ml-1 text-slate-400 font-mono text-[10px]">{s.ksic_code}</span>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <div className="flex items-center gap-2">
-                          <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                            <div
-                              className="h-full rounded-full"
-                              style={{
-                                width: `${pct * 100}%`,
-                                background: getRiskColor(s.risk_score ?? 0, maxR),
-                              }}
-                            />
+      {/* 리스크 있는 산업만 테이블 */}
+      {(() => {
+        const ranked = [...industries]
+          .filter(s => (s.risk_score ?? 0) > 0)
+          .sort((a, b) => (b.risk_score ?? 0) - (a.risk_score ?? 0))
+        const maxR = ranked[0] ? ranked[0].risk_score ?? 1 : 1
+        return (
+          <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+            <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-slate-700">규제 리스크 산업 랭킹</h3>
+              <span className="text-[11px] text-slate-400">
+                risk_score {'>'} 0인 {ranked.length}개 산업 / 전체 {industries.length}개
+              </span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-100">
+                    {['#', '산업', 'risk_score', '총 발의', '가결', '가결률', '규제 비율', '90일 활성'].map(h => (
+                      <th key={h} className="px-3 py-2.5 text-left text-slate-500 font-medium whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {ranked.map((s, i) => {
+                    const pct = maxR > 0 ? (s.risk_score ?? 0) / maxR : 0
+                    return (
+                      <tr
+                        key={s.ksic_code}
+                        className="border-b border-slate-50 hover:bg-blue-50/50 cursor-pointer transition-colors"
+                        onClick={() => onDrilldown?.(s.ksic_code)}
+                      >
+                        <td className="px-3 py-2.5 text-slate-400 font-mono">{i + 1}</td>
+                        <td className="px-3 py-2.5 text-slate-700 font-medium whitespace-nowrap">
+                          {getKsicName(s.ksic_code)}
+                          <span className="ml-1 text-slate-400 font-mono text-[10px]">{s.ksic_code}</span>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <div className="flex items-center gap-2">
+                            <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                              <div
+                                className="h-full rounded-full"
+                                style={{
+                                  width: `${pct * 100}%`,
+                                  background: getRiskColor(s.risk_score ?? 0, maxR),
+                                }}
+                              />
+                            </div>
+                            <span className="text-slate-600 font-mono">{(s.risk_score ?? 0).toFixed(1)}</span>
                           </div>
-                          <span className="text-slate-600 font-mono">{(s.risk_score ?? 0).toFixed(1)}</span>
-                        </div>
-                      </td>
-                      <td className="px-3 py-2.5 text-slate-600 font-mono">{s.total_bills.toLocaleString()}</td>
-                      <td className="px-3 py-2.5 text-slate-600 font-mono">{s.passed_bills.toLocaleString()}</td>
-                      <td className="px-3 py-2.5 text-slate-600 font-mono">{(s.pass_rate ?? 0).toFixed(1)}%</td>
-                      <td className="px-3 py-2.5 text-slate-600 font-mono">{(s.reg_ratio ?? 0).toFixed(1)}%</td>
-                      <td className="px-3 py-2.5 text-slate-600 font-mono">{s.recent_90d_bills ?? 0}</td>
-                    </tr>
-                  )
-                })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                        </td>
+                        <td className="px-3 py-2.5 text-slate-600 font-mono">{s.total_bills.toLocaleString()}</td>
+                        <td className="px-3 py-2.5 text-slate-600 font-mono">{s.passed_bills.toLocaleString()}</td>
+                        <td className="px-3 py-2.5 text-slate-600 font-mono">{(s.pass_rate ?? 0).toFixed(1)}%</td>
+                        <td className="px-3 py-2.5 text-slate-600 font-mono">{(s.reg_ratio ?? 0).toFixed(1)}%</td>
+                        <td className="px-3 py-2.5 text-slate-600 font-mono">{s.recent_90d_bills ?? 0}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
