@@ -32,7 +32,7 @@ const SAMPLE_COMPANIES = [
   { name: '카카오', ksic: '63120', desc: '포털·SNS' },
   { name: '현대자동차', ksic: '30100', desc: '자동차 제조' },
   { name: '셀트리온', ksic: '21201', desc: '의약품 제조' },
-  { name: 'LG에너지솔루션', ksic: '27400', desc: '이차전지' },
+  { name: 'LG에너지솔루션', ksic: '28202', desc: '이차전지' },
 ]
 
 export default function CompanyTab({ signals }: CompanyTabProps) {
