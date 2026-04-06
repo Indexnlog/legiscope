@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -11,6 +11,9 @@ import { supabase } from '@/lib/supabase'
 
 interface CompanyTabProps {
   signals: IndustrySignal[]
+  initialName?: string | null
+  initialKsic?: string | null
+  hidesamples?: boolean
 }
 
 const PASS_RESULTS = new Set(['원안가결', '수정가결'])
@@ -35,10 +38,19 @@ const SAMPLE_COMPANIES = [
   { name: 'LG에너지솔루션', ksic: '28202', desc: '이차전지' },
 ]
 
-export default function CompanyTab({ signals }: CompanyTabProps) {
-  const [companyName, setCompanyName] = useState('')
-  const [ksicInput, setKsicInput] = useState('')
+export default function CompanyTab({ signals, initialName, initialKsic, hidesamples }: CompanyTabProps) {
+  const [companyName, setCompanyName] = useState(initialName ?? '')
+  const [ksicInput, setKsicInput] = useState(initialKsic ?? '')
   const [searched, setSearched] = useState<{ name: string; code3: string } | null>(null)
+  const [autoSearched, setAutoSearched] = useState(false)
+
+  // URL 파라미터로 진입 시 자동 검색
+  useEffect(() => {
+    if (!autoSearched && initialKsic && signals.length > 0) {
+      setAutoSearched(true)
+      handleSearch(initialName ?? '', initialKsic)
+    }
+  }, [initialKsic, initialName, signals, autoSearched])
   const [bills, setBills] = useState<Bill[]>([])
   const [loading, setLoading] = useState(false)
   const [page, setPage] = useState(0)
@@ -103,8 +115,8 @@ export default function CompanyTab({ signals }: CompanyTabProps) {
   return (
     <div className="space-y-6">
       {/* 검색 */}
-      <div className="rounded-xl border border-slate-200 bg-white p-5">
-        <p className="text-[11px] text-slate-400 mb-3">기업명과 KSIC 코드를 입력하세요</p>
+      <div className="rounded-lg border border-slate-200 bg-white p-5">
+        <p className="text-xs text-slate-600 mb-3">기업명과 KSIC 코드를 입력하세요</p>
         <div className="flex flex-col sm:flex-row gap-2">
           <input
             type="text"
@@ -128,7 +140,7 @@ export default function CompanyTab({ signals }: CompanyTabProps) {
             조회
           </button>
         </div>
-        <div className="mt-3 flex flex-wrap gap-1.5">
+        {!hidesamples && <div className="mt-3 flex flex-wrap gap-1.5">
           {SAMPLE_COMPANIES.map(s => (
             <button
               key={s.name}
@@ -138,14 +150,14 @@ export default function CompanyTab({ signals }: CompanyTabProps) {
               {s.name} <span className="text-slate-400">{s.desc}</span>
             </button>
           ))}
-        </div>
+        </div>}
       </div>
 
       {/* 결과 없음 */}
       {searched && noSignal && (
-        <div className="rounded-xl border border-slate-200 bg-white p-8 text-center">
-          <p className="text-slate-500 text-sm">KSIC <span className="font-mono font-semibold">{searched.code3}</span>에 해당하는 데이터가 없습니다.</p>
-          <p className="text-slate-400 text-xs mt-1">5자리 코드 입력 시 앞 3자리(중분류)로 매핑됩니다.</p>
+        <div className="rounded-lg border border-slate-200 bg-white p-8 text-center">
+          <p className="text-slate-600 text-sm">KSIC <span className="font-mono font-semibold">{searched.code3}</span>에 해당하는 데이터가 없습니다.</p>
+          <p className="text-slate-500 text-xs mt-1">5자리 코드 입력 시 앞 3자리(중분류)로 매핑됩니다.</p>
         </div>
       )}
 
@@ -153,12 +165,12 @@ export default function CompanyTab({ signals }: CompanyTabProps) {
       {searched && signal && (
         <>
           {/* 기업 요약 카드 */}
-          <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+          <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
             {/* 상단 헤더 */}
             <div className="px-6 py-5 flex items-start justify-between">
               <div>
-                <p className="text-2xl font-bold text-slate-800">{searched.name}</p>
-                <p className="text-sm text-slate-400 mt-0.5">
+                <p className="text-2xl font-bold text-slate-900">{searched.name}</p>
+                <p className="text-sm text-slate-500 mt-0.5">
                   [{signal.ksic_code}] {getKsicName(signal.ksic_code)}
                 </p>
               </div>
@@ -195,8 +207,8 @@ export default function CompanyTab({ signals }: CompanyTabProps) {
           {/* 차트 2-col */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* 규제 유형 */}
-            <div className="rounded-xl border border-slate-200 bg-white p-5">
-              <h3 className="text-sm font-semibold text-slate-700 mb-3">규제 유형 분포</h3>
+            <div className="rounded-lg border border-slate-200 bg-white p-5">
+              <h3 className="text-sm font-semibold text-slate-900 mb-3">규제 유형 분포</h3>
               {regData.some(d => d.value > 0) ? (
                 <ResponsiveContainer width="100%" height={200}>
                   <PieChart>
@@ -222,8 +234,8 @@ export default function CompanyTab({ signals }: CompanyTabProps) {
             </div>
 
             {/* 연도별 추이 */}
-            <div className="rounded-xl border border-slate-200 bg-white p-5">
-              <h3 className="text-sm font-semibold text-slate-700 mb-3">연도별 발의 추이</h3>
+            <div className="rounded-lg border border-slate-200 bg-white p-5">
+              <h3 className="text-sm font-semibold text-slate-900 mb-3">연도별 발의 추이</h3>
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={yearData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
@@ -240,10 +252,10 @@ export default function CompanyTab({ signals }: CompanyTabProps) {
           </div>
 
           {/* 법안 목록 */}
-          <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-            <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-slate-700">관련 법안</h3>
-              <span className="text-[11px] text-slate-400">{bills.length}건</span>
+          <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+            <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+              <h3 className="text-sm font-semibold text-slate-900">관련 법안</h3>
+              <span className="text-[11px] text-slate-500">{bills.length}건</span>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">

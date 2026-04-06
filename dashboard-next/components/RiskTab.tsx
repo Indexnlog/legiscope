@@ -14,16 +14,18 @@ interface RiskTabProps {
 
 function getRiskColor(score: number, max: number) {
   const pct = max > 0 ? score / max : 0
-  if (pct > 0.5) return '#ef4444'
+  if (pct > 0.7) return '#dc2626'
+  if (pct > 0.4) return '#ef4444'
   if (pct > 0.2) return '#f59e0b'
-  return '#3b82f6'
+  return '#94a3b8'
 }
 
 function getActivityColor(count: number, max: number) {
   const pct = max > 0 ? count / max : 0
-  if (pct > 0.5) return '#3b82f6'
+  if (pct > 0.7) return '#1d4ed8'
+  if (pct > 0.4) return '#3b82f6'
   if (pct > 0.2) return '#60a5fa'
-  return '#93c5fd'
+  return '#94a3b8'
 }
 
 const ChartTooltip = ({ active, payload, label }: any) => {
@@ -52,7 +54,7 @@ export default function RiskTab({ signals, asOf, onDrilldown }: RiskTabProps) {
     .map(s => ({
       code: s.ksic_code,
       name: getKsicName(s.ksic_code),
-      shortName: getKsicName(s.ksic_code).slice(0, 10),
+      shortName: getKsicName(s.ksic_code).slice(0, 14),
       risk_score: s.risk_score ?? 0,
       total_bills: s.total_bills,
     }))
@@ -64,7 +66,7 @@ export default function RiskTab({ signals, asOf, onDrilldown }: RiskTabProps) {
     .map(s => ({
       code: s.ksic_code,
       name: getKsicName(s.ksic_code),
-      shortName: getKsicName(s.ksic_code).slice(0, 10),
+      shortName: getKsicName(s.ksic_code).slice(0, 14),
       recent_90d: s.recent_90d_bills ?? 0,
       total_bills: s.total_bills,
     }))
@@ -90,8 +92,8 @@ export default function RiskTab({ signals, asOf, onDrilldown }: RiskTabProps) {
       {/* 2-column charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Risk Score TOP 20 */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <h3 className="text-sm font-semibold text-slate-700 mb-4">
+        <div className="rounded-lg border border-slate-200 bg-white p-5">
+          <h3 className="text-sm font-semibold text-slate-900 mb-4">
             규제 리스크 TOP 20
           </h3>
           <ResponsiveContainer width="100%" height={520}>
@@ -105,7 +107,7 @@ export default function RiskTab({ signals, asOf, onDrilldown }: RiskTabProps) {
               <YAxis
                 type="category"
                 dataKey="shortName"
-                width={90}
+                width={120}
                 tick={{ fill: '#475569', fontSize: 11 }}
               />
               <Tooltip content={<ChartTooltip />} />
@@ -125,8 +127,8 @@ export default function RiskTab({ signals, asOf, onDrilldown }: RiskTabProps) {
         </div>
 
         {/* Activity TOP 20 */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <h3 className="text-sm font-semibold text-slate-700 mb-4">
+        <div className="rounded-lg border border-slate-200 bg-white p-5">
+          <h3 className="text-sm font-semibold text-slate-900 mb-4">
             최근 90일 입법 활성도 TOP 20
           </h3>
           <ResponsiveContainer width="100%" height={520}>
@@ -140,7 +142,7 @@ export default function RiskTab({ signals, asOf, onDrilldown }: RiskTabProps) {
               <YAxis
                 type="category"
                 dataKey="shortName"
-                width={90}
+                width={120}
                 tick={{ fill: '#475569', fontSize: 11 }}
               />
               <Tooltip content={<ChartTooltip />} />
@@ -167,10 +169,10 @@ export default function RiskTab({ signals, asOf, onDrilldown }: RiskTabProps) {
           .sort((a, b) => (b.risk_score ?? 0) - (a.risk_score ?? 0))
         const maxR = ranked[0] ? ranked[0].risk_score ?? 1 : 1
         return (
-          <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-            <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-slate-700">규제 리스크 산업 랭킹</h3>
-              <span className="text-[11px] text-slate-400">
+          <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+            <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+              <h3 className="text-sm font-semibold text-slate-900">규제 리스크 산업 랭킹</h3>
+              <span className="text-[11px] text-slate-500">
                 risk_score {'>'} 0인 {ranked.length}개 산업 / 전체 {industries.length}개
               </span>
             </div>

@@ -14,8 +14,8 @@ interface ProcessTabProps {
 }
 
 const FLOW_COLORS = {
-  active: { bg: '#1e293b', text: '#ffffff' },
-  inactive: { bg: '#f8fafc', text: '#94a3b8', border: '#e2e8f0' },
+  active: { bg: '#3b82f6', text: '#ffffff' },
+  inactive: { bg: '#f3f4f6', text: '#9ca3af', border: '#e5e7eb' },
 }
 
 function fmt(n: number) { return n > 0 ? `${n.toLocaleString()}건` : null }
@@ -39,21 +39,37 @@ export default function ProcessTab({ stats }: ProcessTabProps) {
 
   return (
     <div className="space-y-6">
+      {/* KPI 카드 */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        {[
+          { label: '총 발의', value: stats.bills, color: 'text-blue-600' },
+          { label: '상임위 통과', value: stats.committee_reviewed, color: 'text-slate-600' },
+          { label: '본회의 가결', value: stats.passed, color: 'text-green-600' },
+          { label: '공포', value: stats.promulgated, color: 'text-slate-600' },
+          { label: '계류중', value: stats.pending, color: 'text-amber-600' },
+        ].map(item => (
+          <div key={item.label} className="rounded-lg border border-slate-200 bg-white p-4 text-center">
+            <p className="text-xs text-slate-500 mb-1">{item.label}</p>
+            <p className={`text-2xl font-bold ${item.color}`}>{item.value.toLocaleString()}</p>
+          </div>
+        ))}
+      </div>
+
       {/* 입법 절차 흐름도 */}
-      <div className="rounded-xl border border-slate-200 bg-white p-5">
+      <div className="rounded-lg border border-slate-200 bg-white p-5">
         <div className="flex items-center justify-between mb-5">
           <div>
-            <h3 className="text-base font-bold text-slate-800">대한민국 입법 절차</h3>
-            <p className="text-[11px] text-slate-400 mt-0.5">
+            <h3 className="text-base font-bold text-slate-900">대한민국 입법 절차</h3>
+            <p className="text-xs text-slate-500 mt-0.5">
               22대 국회 기준 · 발의부터 공포까지 9단계
             </p>
           </div>
-          <div className="flex items-center gap-3 text-[11px] text-slate-400">
+          <div className="flex items-center gap-3 text-[11px] text-slate-500">
             <span className="flex items-center gap-1">
-              <span className="w-2.5 h-2.5 rounded-sm bg-slate-800" /> Legiscope 수집
+              <span className="w-2.5 h-2.5 rounded-sm bg-blue-600" /> 수집
             </span>
             <span className="flex items-center gap-1">
-              <span className="w-2.5 h-2.5 rounded-sm bg-slate-100 border border-slate-200" /> 미수집
+              <span className="w-2.5 h-2.5 rounded-sm bg-slate-200" /> 미수집
             </span>
           </div>
         </div>
@@ -86,11 +102,11 @@ export default function ProcessTab({ stats }: ProcessTabProps) {
       </div>
 
       {/* 용어 설명 */}
-      <details className="rounded-xl border border-slate-200 bg-white">
-        <summary className="px-5 py-3 text-sm font-semibold text-slate-700 cursor-pointer select-none hover:bg-slate-50 transition-colors">
+      <details className="rounded-lg border border-slate-200 bg-white">
+        <summary className="px-5 py-3 text-sm font-semibold text-slate-900 cursor-pointer select-none hover:bg-slate-50 transition-colors">
           주요 용어 설명
         </summary>
-        <div className="px-5 pb-5 grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div className="px-5 pb-5 grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-slate-100">
           {[
             { term: '입법예고', def: '법안 발의 전 국민의 의견을 수렴하는 절차. 공표 후 20일 이상 의견 접수.' },
             { term: '소관 상임위', def: '법안의 내용과 관련된 분야를 담당하는 위원회.' },
@@ -102,7 +118,7 @@ export default function ProcessTab({ stats }: ProcessTabProps) {
           ].map(item => (
             <div key={item.term} className="rounded-lg p-3 bg-slate-50 border border-slate-100">
               <span className="text-sm font-semibold text-blue-600">{item.term}</span>
-              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{item.def}</p>
+              <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">{item.def}</p>
             </div>
           ))}
         </div>

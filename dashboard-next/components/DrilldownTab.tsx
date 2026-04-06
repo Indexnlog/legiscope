@@ -8,6 +8,7 @@ import {
 import type { IndustrySignal, Bill } from '@/lib/types'
 import { getKsicName } from '@/lib/ksic-names'
 import { supabase } from '@/lib/supabase'
+import { downloadBillsCsv } from '@/lib/csv-export'
 
 interface DrilldownTabProps {
   signals: IndustrySignal[]
@@ -64,6 +65,9 @@ export default function DrilldownTab({ signals, initialKsic }: DrilldownTabProps
     loadBills(selected, 0)
   }, [selected, loadBills])
 
+  const [searchQuery, setSearchQuery] = useState('')
+  const [regFilter, setRegFilter] = useState<string>('all')
+
   const signal = signals.find(s => s.ksic_code === selected)
 
   const regData = signal ? [
@@ -89,13 +93,13 @@ export default function DrilldownTab({ signals, initialKsic }: DrilldownTabProps
   return (
     <div className="space-y-5">
       {/* 산업 선택 */}
-      <div className="bg-white rounded-xl border border-slate-200 p-4">
-        <label className="block text-[11px] text-slate-400 mb-2 font-medium">산업 선택 (KSIC 중분류)</label>
+      <div className="bg-white rounded-lg border border-slate-200 p-4">
+        <label className="block text-xs text-slate-600 mb-2 font-medium">산업 선택 (KSIC 중분류)</label>
         <select
           value={selected}
           onChange={e => setSelected(e.target.value)}
-          className="w-full rounded-lg px-3 py-2 text-sm font-medium bg-white border border-gray-200"
-          style={{ color: '#1B2745' }}
+          className="w-full rounded-lg px-3 py-2 text-sm font-medium bg-white border border-slate-200"
+          style={{ color: '#0f172a' }}
         >
           {industries.map(s => (
             <option key={s.ksic_code} value={s.ksic_code}>
@@ -110,24 +114,24 @@ export default function DrilldownTab({ signals, initialKsic }: DrilldownTabProps
           {/* 지표 카드 */}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             {[
-              { label: '총 발의', value: signal.total_bills.toLocaleString(), color: '#3182f6' },
-              { label: '본회의 가결', value: signal.passed_bills.toLocaleString(), color: '#22c55e' },
-              { label: '가결률', value: (signal.pass_rate ?? 0).toFixed(1) + '%', color: '#10b981' },
-              { label: '계류 중', value: signal.pending_bills.toLocaleString(), color: '#f59e0b' },
-              { label: 'risk_score', value: (signal.risk_score ?? 0).toFixed(2), color: '#f04452' },
+              { label: '총 발의', value: signal.total_bills.toLocaleString(), color: 'text-blue-600' },
+              { label: '본회의 가결', value: signal.passed_bills.toLocaleString(), color: 'text-green-600' },
+              { label: '가결률', value: (signal.pass_rate ?? 0).toFixed(1) + '%', color: 'text-teal-600' },
+              { label: '계류 중', value: signal.pending_bills.toLocaleString(), color: 'text-amber-600' },
+              { label: 'risk_score', value: (signal.risk_score ?? 0).toFixed(2), color: 'text-red-600' },
             ].map(c => (
-              <div key={c.label} className="rounded-xl p-4 text-center bg-white border border-slate-200">
-                <div className="text-[11px] text-gray-500 mb-1">{c.label}</div>
-                <div className="text-xl font-bold" style={{ color: c.color }}>{c.value}</div>
+              <div key={c.label} className="rounded-lg p-4 text-center bg-white border border-slate-200">
+                <div className="text-xs text-slate-600 mb-1">{c.label}</div>
+                <div className={`text-xl font-bold ${c.color}`}>{c.value}</div>
               </div>
             ))}
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             {/* 규제 유형 파이 */}
-            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
               <div className="px-5 pt-5 pb-1">
-                <h3 className="text-[15px] font-bold tracking-tight" style={{ color: '#1B2745' }}>규제 유형 분포</h3>
+                <h3 className="text-sm font-bold tracking-tight text-slate-900">규제 유형 분포</h3>
               </div>
               <div className="px-5 pb-3 pt-2">
                 {regData.some(d => d.value > 0) ? (
@@ -159,10 +163,10 @@ export default function DrilldownTab({ signals, initialKsic }: DrilldownTabProps
             </div>
 
             {/* 연도별 발의 추이 */}
-            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
               <div className="px-5 pt-5 pb-1">
-                <h3 className="text-[15px] font-bold tracking-tight" style={{ color: '#1B2745' }}>연도별 발의 추이</h3>
-                <p className="text-[11px] text-gray-400 mt-0.5">최근 50건 기준</p>
+                <h3 className="text-sm font-bold tracking-tight text-slate-900">연도별 발의 추이</h3>
+                <p className="text-xs text-slate-500 mt-0.5">최근 50건 기준</p>
               </div>
               <div className="px-5 pb-3 pt-2">
                 <ResponsiveContainer width="100%" height={220}>
@@ -185,10 +189,46 @@ export default function DrilldownTab({ signals, initialKsic }: DrilldownTabProps
           </div>
 
           {/* 법안 목록 테이블 */}
-          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 bg-gray-50">
-              <h3 className="text-sm font-semibold" style={{ color: '#1B2745' }}>관련 법안 목록</h3>
-              <span className="text-xs text-gray-400">{bills.length}건 표시</span>
+          {(() => {
+            const filtered = bills.filter(b => {
+              const matchSearch = !searchQuery || (b.bill_name ?? '').includes(searchQuery)
+              const matchReg = regFilter === 'all' || (b.regulation_type ?? '미분류') === regFilter
+              return matchSearch && matchReg
+            })
+            return (
+          <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+            <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 space-y-2">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-slate-900">관련 법안 목록</h3>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500">{filtered.length}건 {filtered.length !== bills.length && `/ ${bills.length}건`}</span>
+                  <button
+                    onClick={() => downloadBillsCsv(filtered, `legiscope_${selected}.csv`)}
+                    className="px-2.5 py-1 rounded text-[11px] font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 transition-colors"
+                  >
+                    CSV 다운로드
+                  </button>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="법안명 검색..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="flex-1 rounded px-2.5 py-1.5 text-xs text-slate-700 bg-white border border-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-300"
+                />
+                <select
+                  value={regFilter}
+                  onChange={e => setRegFilter(e.target.value)}
+                  className="rounded px-2.5 py-1.5 text-xs text-slate-700 bg-white border border-slate-200"
+                >
+                  <option value="all">전체 유형</option>
+                  <option value="규제">규제</option>
+                  <option value="지원">지원</option>
+                  <option value="중립">중립</option>
+                </select>
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-xs bg-white">
@@ -200,7 +240,7 @@ export default function DrilldownTab({ signals, initialKsic }: DrilldownTabProps
                   </tr>
                 </thead>
                 <tbody>
-                  {bills.map((b, i) => {
+                  {filtered.map((b, i) => {
                     const badge = getBadgeStyle(b.regulation_type)
                     const passed = PASS_RESULTS.has(b.proc_result_cd ?? '')
                     return (
@@ -240,6 +280,8 @@ export default function DrilldownTab({ signals, initialKsic }: DrilldownTabProps
               <span className="text-[11px] text-gray-400">* source: Legiscope, 국회 OpenAPI</span>
             </div>
           </div>
+            )
+          })()}
         </>
       )}
     </div>
