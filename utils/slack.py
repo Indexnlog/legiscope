@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 SLACK_TOKEN = os.getenv("SLACK_TOKEN", "")
-SLACK_CHANNEL_ID = os.getenv("SLACK_CHANNEL_ID", "C0A6FDJBFJ5")
+SLACK_CHANNEL_ID = os.getenv("SLACK_CHANNEL_ID", "C070BNYBTQ9")
 
 # Slack mrkdwn / 알림용 (section text 상한에 맞춰 분할)
 _MRDKWN_CHUNK = 2800

@@ -40,8 +40,8 @@ _DEFAULT_NEWS_EPOCH_OBSIDIAN_ROOT = Path(
 )
 _DEFAULT_NEWS_EPOCH_ARTICLE_DRAFT_DIR = (
     _DEFAULT_NEWS_EPOCH_OBSIDIAN_ROOT
-    / "20_Projects_Builder"
-    / "21_NEWS EPOCH"
+    / "20_Pitchdeck"
+    / "22_NEWS_EPOCH"
     / "2026 입법레이더-Legiscope"
     / "01_기사초안"
 )
@@ -50,8 +50,8 @@ _DEFAULT_NEWS_EPOCH_ARTICLE_DRAFT_DIR = (
 NEWS_EPOCH_GUIDELINE_PATH = _get("NEWS_EPOCH_GUIDELINE_PATH")
 _DEFAULT_NEWS_EPOCH_GUIDE = (
     _DEFAULT_NEWS_EPOCH_OBSIDIAN_ROOT
-    / "20_Projects_Builder"
-    / "21_NEWS EPOCH"
+    / "20_Pitchdeck"
+    / "22_NEWS_EPOCH"
     / "NEWS EPOCH 작성 지침.md"
 )
 

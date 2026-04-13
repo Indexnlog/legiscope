@@ -36,14 +36,14 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 
 def resolve_article_llm_provider() -> str:
-    """gemini | claude. ARTICLE_LLM_PROVIDER 우선, 없으면 키 있는 쪽."""
+    """gemini | claude. ARTICLE_LLM_PROVIDER 우선, 없으면 키 있는 쪽. 기본값 claude."""
     if ARTICLE_LLM_PROVIDER in ("gemini", "claude"):
         return ARTICLE_LLM_PROVIDER
-    if GEMINI_API_KEY:
-        return "gemini"
     if ANTHROPIC_API_KEY:
         return "claude"
-    return "gemini"
+    if GEMINI_API_KEY:
+        return "gemini"
+    return "claude"
 
 
 # 초안에 자주 끼어드는 ‘데이터 밖’ 배경. <SOURCE_FACTS>에 없으면 경고(환각 의심).
@@ -1445,7 +1445,18 @@ def main():
     parser.add_argument(
         "--draft",
         action="store_true",
-        help="기사 초안 생성 (ARTICLE_LLM_PROVIDER 또는 GEMINI/Anthropic 키)",
+        help="기사 초안 생성 (모든 트리거 대상)",
+    )
+    parser.add_argument(
+        "--pick",
+        action="store_true",
+        help="트리거 목록에서 기사감 골라서 초안 생성 (인터랙티브)",
+    )
+    parser.add_argument(
+        "--topic",
+        type=str,
+        default="",
+        help="특정 키워드 트리거만 초안 생성 (예: --topic 조세특례제한법)",
     )
     parser.add_argument("--sector",  type=str, default="", help=f"섹터 심층 기사 생성: {list(SECTOR_KSIC.keys())}")
     args = parser.parse_args()
@@ -1492,43 +1503,76 @@ def main():
             send_weekly_brief(has_triggers, brief_text, str(TODAY))
             record_brief_bill_ids("weekly", brief_bill_ids)
 
-        if args.draft and has_triggers:
-            # 모든 트리거에서 초안 대상 수집
-            draft_targets: list[dict] = []
+        if (args.draft or args.pick or args.topic) and has_triggers:
+            # 전체 트리거 목록 수집
+            all_targets: list[dict] = []
             if passed:
-                draft_targets.append(_build_passed_draft_target(passed))
+                all_targets.append(_build_passed_draft_target(passed))
             if clusters:
                 for ck, cg in list(clusters.items())[:3]:
-                    draft_targets.append(_build_cluster_draft_target(ck, cg))
+                    all_targets.append(_build_cluster_draft_target(ck, cg))
             if intl:
-                draft_targets.append(_build_intl_draft_target(intl))
+                all_targets.append(_build_intl_draft_target(intl))
             if moved:
-                draft_targets.append(_build_moved_draft_target(moved))
+                all_targets.append(_build_moved_draft_target(moved))
 
-            llm = resolve_article_llm_provider()
-            for i, target in enumerate(draft_targets):
-                trigger_type = target["trigger_type"]
-                key_data = target["key_data"]
-                wl = target["whitelist"]
-                file_label = target["label"]
+            # 초안 대상 선정
+            if args.topic:
+                # --topic: 키워드 매칭으로 필터
+                keyword = args.topic.strip()
+                draft_targets = [
+                    t for t in all_targets
+                    if keyword in t["label"] or keyword in t["key_data"]
+                ]
+                if not draft_targets:
+                    print(f"\n[!] '{keyword}' 매칭 트리거 없음. 전체 목록:")
+                    for i, t in enumerate(all_targets, 1):
+                        print(f"  {i}. [{t['trigger_type']}] {t['label']}")
+            elif args.pick:
+                # --pick: 인터랙티브 선택
+                print("\n" + "=" * 50)
+                print("기사감 선택 (번호 입력, 쉼표로 복수 선택, a=전체)")
+                print("=" * 50)
+                for i, t in enumerate(all_targets, 1):
+                    print(f"  {i}. [{t['trigger_type']}] {t['label']}")
+                print()
+                choice = input(">>> ").strip()
+                if choice.lower() == "a":
+                    draft_targets = all_targets
+                else:
+                    indices = [int(x.strip()) - 1 for x in choice.split(",") if x.strip().isdigit()]
+                    draft_targets = [all_targets[i] for i in indices if 0 <= i < len(all_targets)]
+            else:
+                # --draft: 전체
+                draft_targets = all_targets
 
-                print(f"\n📝 기사 초안 생성 중 [{i+1}/{len(draft_targets)}] ({llm}, {trigger_type})...")
-                draft = generate_article_draft(
-                    key_data, trigger_type, name_whitelist=wl
-                )
-                print("\n" + "=" * 65)
-                print(draft)
-                print("=" * 65)
+            if draft_targets:
+                llm = resolve_article_llm_provider()
+                for i, target in enumerate(draft_targets):
+                    trigger_type = target["trigger_type"]
+                    key_data = target["key_data"]
+                    wl = target["whitelist"]
+                    file_label = target["label"]
 
-                save_to_obsidian(file_label or trigger_type, draft)
+                    print(f"\n📝 기사 초안 생성 중 [{i+1}/{len(draft_targets)}] ({llm}, {trigger_type})...")
+                    draft = generate_article_draft(
+                        key_data, trigger_type, name_whitelist=wl
+                    )
+                    print("\n" + "=" * 65)
+                    print(draft)
+                    print("=" * 65)
 
-                if args.slack:
-                    from utils.slack import send_article_draft
-                    send_article_draft(trigger_type, draft, str(TODAY))
+                    save_to_obsidian(file_label or trigger_type, draft)
 
-        print(f"\n💡 월간 리포트: python article_weekly.py --monthly")
-        print(f"💡 Slack 전송: python article_weekly.py --slack")
-        print(f"💡 기사 초안:  python article_weekly.py --slack --draft")
+                    if args.slack:
+                        from utils.slack import send_article_draft
+                        send_article_draft(trigger_type, draft, str(TODAY))
+
+        print(f"\n💡 브리프만:     python article_weekly.py")
+        print(f"💡 골라서 초안:  python article_weekly.py --pick")
+        print(f"💡 키워드 초안:  python article_weekly.py --topic 조세특례제한법")
+        print(f"💡 전체 초안:    python article_weekly.py --draft")
+        print(f"💡 섹터 기사:    python article_weekly.py --sector 반도체")
 
 
 if __name__ == "__main__":

@@ -12,14 +12,22 @@ Windows 작업 스케줄러 등록 방법:
              시작 위치: C:/Users/ekapr/legiscope
   3. 저장
 
+또는 관리자 PowerShell에서:
+  schtasks /create /tn "LegiscopeWeekly" /tr "C:/Users/ekapr/Documents/GitHub/legiscope/run_weekly.bat" /sc weekly /d FRI /st 07:00 /rl HIGHEST
+
 또는 아래 배치 파일(run_weekly.bat)을 작업 스케줄러에 등록하세요.
 """
 
 import os
 import subprocess
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
+
+# Windows 콘솔(cp949)에서 유니코드 문자(em dash 등)가 깨지지 않도록
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 BASE = Path(__file__).parent
 LOG_DIR = BASE / "output" / "logs"
@@ -38,7 +46,7 @@ STEPS = [
     ("산업별 지표",   ["python", "-m", "processors.industry_signals"]),
     ("CSV 내보내기",  ["python", "export_csv.py"]),
     ("법안 제안이유 보강", ["python", "-m", "collectors.bill_enricher", "--limit", "100"]),
-    ("주간 기사 브리프", ["python", "article_weekly.py", "--slack", "--draft"]),
+    ("주간 기사 브리프", ["python", "article_weekly.py"]),
 ]
 
 
