@@ -30,6 +30,30 @@ function getRiskLevel(score: number) {
   return { label: 'Low', color: '#0d9488', bg: '#f0fdfa' }
 }
 
+function getExposureMessage(name: string, industry: string, signal: IndustrySignal, recentBillName?: string) {
+  const riskScore = signal.risk_score ?? 0
+  const recent = signal.recent_90d_bills ?? 0
+  const regRatio = signal.reg_ratio ?? 0
+  const subject = name || '이 기업'
+
+  if (riskScore >= 5 && recent >= 20) {
+    return `${subject}이 속한 ${industry}은 규제 강도와 최근 입법 활동이 모두 높습니다. 관련 법안의 처리 흐름을 우선 모니터링해야 합니다.`
+  }
+  if (riskScore >= 5) {
+    return `${subject}이 속한 ${industry}은 누적 규제 압력이 높은 산업입니다. 신규 발의보다 기존 계류 법안의 진전 여부가 중요합니다.`
+  }
+  if (recent >= 20) {
+    return `${subject}이 속한 ${industry}은 최근 90일 동안 입법 활동이 빠르게 쌓이고 있습니다. 규제 전환 가능성을 관찰할 구간입니다.`
+  }
+  if (regRatio >= 30) {
+    return `${subject}이 속한 ${industry}은 발의 규모는 제한적이지만 규제 법안 비중이 높습니다. 개별 법안 내용 확인이 필요합니다.`
+  }
+  if (recentBillName) {
+    return `${subject}이 속한 ${industry}은 현재 고위험 구간은 아니지만, 최근 관련 법안이 계속 관측되고 있습니다.`
+  }
+  return `${subject}이 속한 ${industry}은 현재 입법 리스크가 낮은 편입니다. 정기 관찰 대상으로 두면 충분합니다.`
+}
+
 const SAMPLE_COMPANIES = [
   { name: '삼성전자', ksic: '26111', desc: '반도체 제조' },
   { name: '카카오', ksic: '63120', desc: '포털·SNS' },
@@ -111,6 +135,15 @@ export default function CompanyTab({ signals, initialName, initialKsic, hidesamp
     .map(([year, count]) => ({ year, count }))
 
   const risk = signal ? getRiskLevel(signal.risk_score ?? 0) : null
+  const latestBill = bills[0]
+  const topCommittee = (() => {
+    const counts = new Map<string, number>()
+    for (const b of bills) {
+      if (!b.committee) continue
+      counts.set(b.committee, (counts.get(b.committee) ?? 0) + 1)
+    }
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0]
+  })()
 
   return (
     <div className="space-y-6">
@@ -164,43 +197,74 @@ export default function CompanyTab({ signals, initialName, initialKsic, hidesamp
       {/* 결과 */}
       {searched && signal && (
         <>
-          {/* 기업 요약 카드 */}
           <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
-            {/* 상단 헤더 */}
-            <div className="px-6 py-5 flex items-start justify-between">
-              <div>
-                <p className="text-2xl font-bold text-slate-900">{searched.name}</p>
-                <p className="text-sm text-slate-500 mt-0.5">
-                  [{signal.ksic_code}] {getKsicName(signal.ksic_code)}
+            <div className="px-6 py-5 border-b border-slate-100">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase text-blue-600">Company Exposure Card</p>
+                  <p className="text-2xl font-bold text-slate-900 mt-1">{searched.name}</p>
+                  <p className="text-sm text-slate-500 mt-0.5">
+                    [{signal.ksic_code}] {getKsicName(signal.ksic_code)}
+                  </p>
+                </div>
+                {risk && (
+                  <div
+                    className="px-4 py-2 rounded-lg text-sm font-bold border self-start"
+                    style={{ background: risk.bg, color: risk.color, borderColor: risk.color + '30' }}
+                  >
+                    {risk.label} Risk
+                  </div>
+                )}
+              </div>
+              <div className="mt-5 rounded-lg bg-slate-50 border border-slate-100 p-4">
+                <p className="text-xs font-semibold text-slate-500 mb-1">한 줄 해석</p>
+                <p className="text-sm leading-relaxed text-slate-800">
+                  {getExposureMessage(searched.name, getKsicName(signal.ksic_code), signal, latestBill?.bill_name)}
                 </p>
               </div>
-              {risk && (
-                <div
-                  className="px-4 py-2 rounded-lg text-sm font-bold border"
-                  style={{ background: risk.bg, color: risk.color, borderColor: risk.color + '30' }}
-                >
-                  {risk.label} Risk
-                </div>
-              )}
             </div>
 
-            {/* 지표 그리드 */}
-            <div className="grid grid-cols-5 border-t border-slate-100">
+            <div className="grid grid-cols-2 lg:grid-cols-4 border-b border-slate-100">
               {[
-                { label: '총 발의', value: signal.total_bills.toLocaleString() },
-                { label: '가결', value: signal.passed_bills.toLocaleString() },
-                { label: '가결률', value: (signal.pass_rate ?? 0).toFixed(1) + '%' },
-                { label: '계류', value: signal.pending_bills.toLocaleString() },
-                { label: 'risk_score', value: (signal.risk_score ?? 0).toFixed(1) },
+                { label: '입법 노출', value: signal.total_bills.toLocaleString(), sub: '누적 관련 법안' },
+                { label: '최근 압력', value: (signal.recent_90d_bills ?? 0).toLocaleString(), sub: '최근 90일 발의' },
+                { label: '규제 법안', value: (signal.reg_count ?? 0).toLocaleString(), sub: `${(signal.reg_ratio ?? 0).toFixed(1)}% 비중` },
+                { label: '계류 법안', value: signal.pending_bills.toLocaleString(), sub: '남아 있는 처리 대상' },
               ].map((c, i) => (
-                <div
-                  key={c.label}
-                  className={`px-4 py-3 text-center ${i < 4 ? 'border-r border-slate-100' : ''}`}
-                >
-                  <p className="text-[10px] text-slate-400 mb-0.5">{c.label}</p>
-                  <p className="text-lg font-bold text-slate-700 tabular-nums">{c.value}</p>
+                <div key={c.label} className={`px-5 py-4 ${i < 3 ? 'lg:border-r lg:border-slate-100' : ''} ${i % 2 === 0 ? 'border-r border-slate-100 lg:border-r' : ''}`}>
+                  <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">{c.label}</p>
+                  <p className="text-2xl font-bold text-slate-800 mt-1 tabular-nums">{c.value}</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">{c.sub}</p>
                 </div>
               ))}
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-0">
+              <div className="px-5 py-4 border-b lg:border-b-0 lg:border-r border-slate-100">
+                <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">risk_score</p>
+                <div className="flex items-center gap-3 mt-2">
+                  <div className="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden">
+                    <div
+                      className="h-full rounded-full"
+                      style={{
+                        width: `${Math.min(100, ((signal.risk_score ?? 0) / 10) * 100)}%`,
+                        background: risk?.color ?? '#94a3b8',
+                      }}
+                    />
+                  </div>
+                  <span className="text-sm font-bold text-slate-800">{(signal.risk_score ?? 0).toFixed(1)}</span>
+                </div>
+              </div>
+              <div className="px-5 py-4 border-b lg:border-b-0 lg:border-r border-slate-100">
+                <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">주요 관할</p>
+                <p className="text-sm font-semibold text-slate-800 mt-2 truncate">{topCommittee?.[0] ?? '소관위원회 미확인'}</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">{topCommittee ? `최근 표시 법안 ${topCommittee[1]}건` : '관련 법안 목록 기준'}</p>
+              </div>
+              <div className="px-5 py-4">
+                <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">최근 관측 법안</p>
+                <p className="text-sm font-semibold text-slate-800 mt-2 truncate" title={latestBill?.bill_name}>{latestBill?.bill_name ?? '관련 법안 없음'}</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">{latestBill?.propose_dt?.slice(0, 10) ?? '날짜 없음'}</p>
+              </div>
             </div>
           </div>
 
