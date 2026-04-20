@@ -43,14 +43,6 @@ export default function CompanyTab({ signals, initialName, initialKsic, hidesamp
   const [ksicInput, setKsicInput] = useState(initialKsic ?? '')
   const [searched, setSearched] = useState<{ name: string; code3: string } | null>(null)
   const [autoSearched, setAutoSearched] = useState(false)
-
-  // URL 파라미터로 진입 시 자동 검색
-  useEffect(() => {
-    if (!autoSearched && initialKsic && signals.length > 0) {
-      setAutoSearched(true)
-      handleSearch(initialName ?? '', initialKsic)
-    }
-  }, [initialKsic, initialName, signals, autoSearched])
   const [bills, setBills] = useState<Bill[]>([])
   const [loading, setLoading] = useState(false)
   const [page, setPage] = useState(0)
@@ -71,7 +63,7 @@ export default function CompanyTab({ signals, initialName, initialKsic, hidesamp
     }
   }, [])
 
-  function handleSearch(name?: string, ksic?: string) {
+  const handleSearch = useCallback((name?: string, ksic?: string) => {
     const n = (name ?? companyName).trim()
     const k = (ksic ?? ksicInput).trim()
     if (!k) return
@@ -82,7 +74,15 @@ export default function CompanyTab({ signals, initialName, initialKsic, hidesamp
     setPage(0)
     setBills([])
     loadBills(code3, 0)
-  }
+  }, [companyName, ksicInput, loadBills, signals])
+
+  // URL 파라미터로 진입 시 자동 검색
+  useEffect(() => {
+    if (!autoSearched && initialKsic && signals.length > 0) {
+      setAutoSearched(true)
+      handleSearch(initialName ?? '', initialKsic)
+    }
+  }, [autoSearched, handleSearch, initialKsic, initialName, signals.length])
 
   function fillSample(s: typeof SAMPLE_COMPANIES[0]) {
     setCompanyName(s.name)
