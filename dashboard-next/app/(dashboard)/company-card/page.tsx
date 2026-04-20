@@ -1,12 +1,14 @@
 'use client'
 
 import { useSearchParams } from 'next/navigation'
-import MacroTrendCard from '@/components/MacroTrendCard'
+import MacroCompanyCard from '@/components/MacroCompanyCard'
 import { useDashboard } from '@/lib/dashboard-context'
 
-export default function MacroCardPage() {
-  useSearchParams()
+export default function CompanyCardPage() {
+  const searchParams = useSearchParams()
   const { signals, loading, error, asOf } = useDashboard()
+  const name = searchParams.get('name')
+  const ksic = searchParams.get('ksic')
 
   if (loading) {
     return (
@@ -27,8 +29,10 @@ export default function MacroCardPage() {
   }
 
   return (
-    <MacroTrendCard
+    <MacroCompanyCard
       signals={signals}
+      companyName={name}
+      ksic={ksic}
       asOf={asOf}
     />
   )
