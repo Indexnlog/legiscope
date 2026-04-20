@@ -12,10 +12,8 @@ const TABS = [
   { href: '/company', label: '기업 조회' },
 ]
 
-function DashboardShell({ children }: { children: React.ReactNode }) {
+function DashboardShell({ children, embed }: { children: React.ReactNode; embed: boolean }) {
   const pathname = usePathname()
-  const searchParams = useSearchParams()
-  const embed = searchParams.get('embed') === 'true'
   const { stats, asOf, loading } = useDashboard()
 
   if (embed) {
@@ -76,15 +74,24 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
-    <DashboardProvider>
-      <Suspense fallback={
-        <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-white">
-          <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-slate-400 text-sm">Loading...</p>
-        </div>
-      }>
-        <DashboardShell>{children}</DashboardShell>
-      </Suspense>
+    <Suspense fallback={
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-white">
+        <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        <p className="text-slate-400 text-sm">Loading...</p>
+      </div>
+    }>
+      <DashboardLayoutContent>{children}</DashboardLayoutContent>
+    </Suspense>
+  )
+}
+
+function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
+  const searchParams = useSearchParams()
+  const embed = searchParams.get('embed') === 'true'
+
+  return (
+    <DashboardProvider includeOverallStats={!embed}>
+      <DashboardShell embed={embed}>{children}</DashboardShell>
     </DashboardProvider>
   )
 }

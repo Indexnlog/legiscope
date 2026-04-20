@@ -51,7 +51,13 @@ function deriveStatsFromSignals(sigs: IndustrySignal[]): OverallStats {
   }
 }
 
-export function DashboardProvider({ children }: { children: ReactNode }) {
+export function DashboardProvider({
+  children,
+  includeOverallStats = true,
+}: {
+  children: ReactNode
+  includeOverallStats?: boolean
+}) {
   const [signals, setSignals] = useState<IndustrySignal[]>([])
   const [stats, setStats] = useState<OverallStats>(DEFAULT_STATS)
   const [loading, setLoading] = useState(true)
@@ -59,10 +65,11 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
   const [asOf, setAsOf] = useState('')
 
   useEffect(() => {
-    Promise.all([loadSignals(), loadStats()])
+    const jobs = includeOverallStats ? [loadSignals(), loadStats()] : [loadSignals()]
+    Promise.all(jobs)
       .catch(e => setError(String(e)))
       .finally(() => setLoading(false))
-  }, [])
+  }, [includeOverallStats])
 
   async function loadSignals() {
     const { data: latest } = await supabase
