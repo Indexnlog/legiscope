@@ -268,6 +268,11 @@ def main():
 
     print(f"[{TODAY}] 일간 트리거 감지 중... (기준일: {YESTERDAY_STR})")
 
+    from db.client import health_check
+    if not health_check(notify_on_fail=True):
+        print("[중단] Supabase 접근 불가 — 슬랙 알림 발송됨.")
+        sys.exit(1)
+
     try:
         passed_bills, proposed_bills = fetch_yesterday_bills()
     except Exception as e:

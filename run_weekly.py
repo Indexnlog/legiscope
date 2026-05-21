@@ -62,6 +62,14 @@ def run():
             f.write(line + "\n")
 
     log(f"=== Legiscope 주간 수집 시작 ({now.strftime('%Y-%m-%d %H:%M')}) ===")
+
+    from db.client import health_check
+    log("--- Supabase 헬스체크 ---")
+    if not health_check(notify_on_fail=True):
+        log("[중단] Supabase 접근 불가 — 슬랙 알림 발송됨. 전체 단계 스킵.")
+        return
+    log("  OK")
+
     ok_count = 0
 
     for name, cmd in STEPS:
