@@ -74,6 +74,15 @@ def parse_rss(feed_url: str, ministry: str) -> list[dict]:
         print(f"  [SKIP] {ministry}: {e}")
         return []
 
+    # Content-Type 가드: HTML이면 엔드포인트가 stale일 가능성 높음
+    ctype = (resp.headers.get("content-type") or "").lower()
+    if "xml" not in ctype and "rss" not in ctype:
+        print(
+            f"  [경고] {ministry}: content-type={ctype} (XML 아님, {len(resp.content)}B) "
+            f"— 엔드포인트 점검 필요: {feed_url}"
+        )
+        # HTML이 와도 item 태그 시도는 해본다 (혹시 모를 RSS-in-HTML 케이스)
+
     try:
         root = ET.fromstring(resp.content)
         items = root.findall(".//item")

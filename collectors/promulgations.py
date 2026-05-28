@@ -142,77 +142,81 @@ def _normalize(name: str) -> str:
     )
 
 
+def _fetch_all(db, table: str, columns: str, page_size: int = 1000, **filters):
+    """페이지네이션으로 전체 행 수집. filters는 chain된 빌더에 적용됨."""
+    out = []
+    offset = 0
+    while True:
+        q = db.table(table).select(columns)
+        for fn, args in filters.get("_chain", []):
+            q = getattr(q, fn)(*args)
+        res = q.range(offset, offset + page_size - 1).execute()
+        rows = res.data or []
+        out.extend(rows)
+        if len(rows) < page_size:
+            break
+        offset += page_size
+    return out
+
+
 def link_to_bills():
     """
     promulgations.law_name ↔ bills.bill_name 매칭으로 bill_id 연결
     - 시행령/대통령령/훈령 등 행정입법 제외
     - 21대 국회 개원(2020-05-30) 이후 공포된 법령만 시도
-    - NULL 필터 + page=0 고정 (업데이트 시 rows 이동 방지)
+    - bills 전체를 한 번만 로드 후 메모리에서 substring 매칭
+      (DB ilike 풀스캔이 18k+ bills × 5k+ promulgations에서 statement_timeout 유발)
     """
     db = get_client()
 
+    # 1) 매칭 대상 promulgations 수집 (bill_id 미할당 & 21대 이후)
+    todo = _fetch_all(
+        db, "promulgations", "id, law_name, promulgate_dt",
+        _chain=[
+            ("is_", ("bill_id", "null")),
+            ("gte", ("promulgate_dt", ASSEMBLY_21_START)),
+        ],
+    )
+
+    # 행정입법 제외
+    skipped = sum(
+        1 for r in todo
+        if any((r.get("law_name") or "").endswith(s) for s in ADMIN_LAW_SUFFIXES)
+    )
+    candidates = [
+        r for r in todo
+        if r.get("law_name") and not any(r["law_name"].endswith(s) for s in ADMIN_LAW_SUFFIXES)
+    ]
+
+    if not candidates:
+        print(f"bills 연결 완료: 0/0건 (행정입법 제외: {skipped}건)")
+        return
+
+    # 2) bills 전체 로드 (한 번만)
+    bills = _fetch_all(db, "bills", "bill_id, bill_name")
+    bill_index = [
+        (b["bill_id"], b.get("bill_name") or "", _normalize(b.get("bill_name") or ""))
+        for b in bills if b.get("bill_id")
+    ]
+
+    # 3) 메모리 매칭: 원문 substring → 정규화 substring 순
     linked = 0
-    skipped = 0
-    total_tried = 0
+    for row in candidates:
+        name = row["law_name"]
+        norm = _normalize(name)
 
-    while True:
-        # page=0 고정: 업데이트로 bill_id 채워지면 해당 row가 결과에서 빠지므로
-        result = (
-            db.table("promulgations")
-            .select("id, law_name, promulgate_dt")
-            .is_("bill_id", "null")
-            .gte("promulgate_dt", ASSEMBLY_21_START)
-            .range(0, 999)
-            .execute()
-        )
-        batch = result.data or []
-        if not batch:
-            break
+        hit = next((bid for bid, bn, _ in bill_index if name in bn), None)
+        if hit is None and norm != name:
+            hit = next((bid for bid, _, bnn in bill_index if norm in bnn), None)
 
-        any_linked = False
-        for row in batch:
-            name = row["law_name"]
+        if hit is not None:
+            db.table("promulgations").update({"bill_id": hit}).eq("id", row["id"]).execute()
+            linked += 1
 
-            # 행정입법 제외
-            if any(name.endswith(s) for s in ADMIN_LAW_SUFFIXES):
-                skipped += 1
-                # bill_id를 -1 같은 sentinel 대신 빈 문자열로 표시 불가 → 그냥 건너뜀
-                continue
-
-            total_tried += 1
-            norm = _normalize(name)
-
-            # 1차: 법령명 그대로 bill_name에서 검색
-            match = (
-                db.table("bills")
-                .select("bill_id")
-                .ilike("bill_name", f"%{name}%")
-                .limit(1)
-                .execute()
-            )
-
-            # 2차: 특수문자 정규화 후 재시도
-            if not match.data and norm != name:
-                match = (
-                    db.table("bills")
-                    .select("bill_id")
-                    .ilike("bill_name", f"%{norm}%")
-                    .limit(1)
-                    .execute()
-                )
-
-            if match.data:
-                db.table("promulgations").update(
-                    {"bill_id": match.data[0]["bill_id"]}
-                ).eq("id", row["id"]).execute()
-                linked += 1
-                any_linked = True
-
-        # 이번 배치에서 한 건도 연결 안 됐으면 더 이상 진행 의미 없음
-        if not any_linked:
-            break
-
-    print(f"bills 연결 완료: {linked}/{total_tried}건 (행정입법 제외: {skipped}건)")
+    print(
+        f"bills 연결 완료: {linked}/{len(candidates)}건 "
+        f"(행정입법 제외: {skipped}건, bills 로드: {len(bill_index)}건)"
+    )
 
 
 if __name__ == "__main__":
