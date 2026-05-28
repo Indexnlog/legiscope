@@ -1516,7 +1516,9 @@ def main():
             if passed:
                 all_targets.append(_build_passed_draft_target(passed))
             if clusters:
-                for ck, cg in list(clusters.items())[:3]:
+                # 상위 5개까지 자동 처리 대상에 포함 (브리프 클러스터가 통상 3~6개 잡힘)
+                # --topic 키워드 매칭은 이 풀에서 이뤄지므로 4·5번째 클러스터도 검색 가능
+                for ck, cg in list(clusters.items())[:5]:
                     all_targets.append(_build_cluster_draft_target(ck, cg))
             if intl:
                 all_targets.append(_build_intl_draft_target(intl))

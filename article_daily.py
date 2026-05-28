@@ -28,8 +28,15 @@ load_dotenv()
 sys.stdout.reconfigure(encoding="utf-8")
 
 TODAY = date.today()
-YESTERDAY = TODAY - timedelta(days=1)
-YESTERDAY_STR = str(YESTERDAY)
+# 의안정보시스템 등록 시차(통상 1~3일) 보정 — 윈도우를 "어제~3일전"으로 확장
+# 슬랙 중복 발송은 utils.brief_dedupe(bill_id 기록)로 차단되므로 같은 법안이 며칠 연속 발송되지 않음
+WINDOW_START = TODAY - timedelta(days=3)
+WINDOW_END = TODAY  # exclusive (오늘은 아직 진행 중일 수 있어 제외)
+WINDOW_START_STR = str(WINDOW_START)
+WINDOW_END_STR = str(WINDOW_END)
+# 호환성 보조: 기존 코드/메시지가 YESTERDAY를 참조하면 윈도우 시작값을 가리키도록 둔다
+YESTERDAY = WINDOW_START
+YESTERDAY_STR = WINDOW_START_STR
 
 PASSED = {"원안가결", "수정가결"}
 DEAD = {"임기만료폐기", "폐기", "철회", "대안반영폐기"}
@@ -51,22 +58,21 @@ INTL_KEYWORDS = {
 
 
 def fetch_yesterday_bills():
-    """어제 발의되거나 가결된 법안을 Supabase에서 가져옴"""
+    """최근 3일(=어제~3일전) 동안 발의·가결된 법안을 Supabase에서 가져옴.
+    의안정보시스템 등록 시차(보통 1~3일) 보정. 슬랙 중복은 brief_dedupe로 차단."""
     db = get_client()
 
-    # 어제 가결
     res_passed = db.table("bills")\
         .select("bill_id,bill_name,committee,proc_result_cd,proc_dt,regulation_type,ksic_codes")\
-        .gte("proc_dt", YESTERDAY_STR)\
-        .lt("proc_dt", str(TODAY))\
+        .gte("proc_dt", WINDOW_START_STR)\
+        .lt("proc_dt", WINDOW_END_STR)\
         .in_("proc_result_cd", list(PASSED))\
         .execute()
 
-    # 어제 발의
     res_proposed = db.table("bills")\
         .select("bill_id,bill_name,committee,propose_dt,regulation_type,ksic_codes")\
-        .gte("propose_dt", YESTERDAY_STR)\
-        .lt("propose_dt", str(TODAY))\
+        .gte("propose_dt", WINDOW_START_STR)\
+        .lt("propose_dt", WINDOW_END_STR)\
         .execute()
 
     return res_passed.data or [], res_proposed.data or []
@@ -187,8 +193,8 @@ def apply_slack_overlap_dedupe_daily(triggers):
 
 def build_brief(triggers, passed_total, proposed_total):
     lines = [
-        f"입법 레이더 일간 브리프 ({YESTERDAY_STR})",
-        f"어제 가결 {len(passed_total)}건 / 발의 {len(proposed_total)}건",
+        f"입법 레이더 일간 브리프 ({WINDOW_START_STR} ~ {(WINDOW_END - timedelta(days=1))})",
+        f"최근 3일 가결 {len(passed_total)}건 / 발의 {len(proposed_total)}건",
         "",
     ]
     if triggers:
@@ -266,7 +272,7 @@ def main():
     )
     args = parser.parse_args()
 
-    print(f"[{TODAY}] 일간 트리거 감지 중... (기준일: {YESTERDAY_STR})")
+    print(f"[{TODAY}] 일간 트리거 감지 중... (윈도우: {WINDOW_START_STR} ~ {(WINDOW_END - timedelta(days=1))})")
 
     from db.client import health_check
     if not health_check(notify_on_fail=True):
@@ -279,7 +285,7 @@ def main():
         print(f"[X] Supabase 조회 실패: {e}")
         return
 
-    print(f"  어제 가결: {len(passed_bills)}건 / 발의: {len(proposed_bills)}건")
+    print(f"  최근 3일 가결: {len(passed_bills)}건 / 발의: {len(proposed_bills)}건")
 
     triggers = check_triggers(passed_bills, proposed_bills)
     triggers = apply_slack_overlap_dedupe_daily(triggers)
