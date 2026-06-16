@@ -42,7 +42,7 @@ _DEFAULT_NEWS_EPOCH_ARTICLE_DRAFT_DIR = (
     _DEFAULT_NEWS_EPOCH_OBSIDIAN_ROOT
     / "20_Pitchdeck"
     / "22_NEWS_EPOCH"
-    / "2026 입법레이더-Legiscope"
+    / "03_Legiscope-입법레이더"
     / "01_기사초안"
 )
 
