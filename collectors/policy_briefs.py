@@ -153,3 +153,9 @@ if __name__ == "__main__":
         time.sleep(0.5)
 
     print(f"\n완료: 총 {total}건 저장")
+    if total == 0:
+        # 0건 = 전 피드 사망 신호. exit 0으로 두면 run_weekly가 "성공"으로 집계하는 침묵 실패.
+        # 2026-07-07 확인: korea.kr RSS 전 엔드포인트 404 (안내페이지 /etc/rss.do만 잔존),
+        # moef/mss는 HTML 반환. 소스 교체 또는 폐기 결정 전까지 명시적 실패로 처리.
+        print("[실패] 모든 RSS 피드 0건 — 소스 엔드포인트 전멸. 수집기 소스 교체 필요.")
+        raise SystemExit(1)

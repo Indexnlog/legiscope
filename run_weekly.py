@@ -38,7 +38,10 @@ STEPS = [
     ("상임위 보강",   ["python", "-m", "collectors.committee"]),
     ("입법예고",      ["python", "-m", "collectors.pre_announcements"]),
     ("행정입법예고",  ["python", "-m", "collectors.admin_laws"]),
-    ("정책브리핑",    ["python", "-m", "collectors.policy_briefs"]),
+    # 정책브리핑(collectors.policy_briefs) 폐기 — 2026-07-08.
+    # korea.kr RSS 전 엔드포인트 404(사실상 서비스 폐지), moef/mss도 HTML 반환.
+    # policy_briefs 테이블은 하류 소비자 0 (5/25 수집 중단을 6주간 아무도 인지 못함).
+    # 기존 203건은 테이블에 보존. 필요 기사가 생기면 그때 구체 용도 갖고 재구축.
     ("공포법령",      ["python", "-m", "collectors.promulgations"]),
     ("KSIC 태깅",     ["python", "-m", "mapper.apply_ksic"]),
     ("규제분류",      ["python", "-m", "mapper.regulation_type", "--apply"]),
