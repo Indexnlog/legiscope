@@ -1,0 +1,56 @@
+name: Legiscope Weekly Pipeline
+
+on:
+  # 매주 월요일 09:00 KST = 일요일 00:00 UTC
+  schedule:
+    - cron: "0 0 * * 1"
+  # 수동 트리거
+  workflow_dispatch:
+
+jobs:
+  weekly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        shell: bash
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      ASSEMBLY_API_KEY: ${{ secrets.ASSEMBLY_API_KEY }}
+      LAW_OC: ${{ secrets.LAW_OC }}
+      SLACK_TOKEN: ${{ secrets.SLACK_TOKEN }}
+      SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
+      DART_API_KEY: ${{ secrets.DART_API_KEY }}
+      PYTHONPATH: ${{ github.workspace }}
+      PYTHONIOENCODING: utf-8
+      TZ: Asia/Seoul
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install slack-sdk
+
+      - name: Run weekly pipeline
+        run: python run_weekly.py
+
+      - name: Upload run logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-logs-${{ github.run_id }}
+          path: output/logs/
+          retention-days: 30
+          if-no-files-found: warn
