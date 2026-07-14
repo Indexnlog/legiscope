@@ -705,6 +705,37 @@ def trigger_reg_passed(bills):
 # 691(공공행정 버킷) 제외: 너무 광범위한 catch-all 코드
 EXCLUDE_KSIC_PREFIX = {"691", "841", "851", "854", "881"}
 
+# 클러스터 베이스라인: '30일 3건 이상'만으로는 상시 최다개정 법(조세특례·정보통신망 등)이
+# 매주 걸려 동어반복 후보를 낳는다. 각 법안군의 평상시 월평균 대비 유의미하게 튄
+# 클러스터만 기사감으로 올린다.
+CLUSTER_BASELINE_DAYS = 365      # 평상시 기준 창(직전 12개월)
+CLUSTER_SPIKE_FACTOR = 1.8       # 최근 30일 건수가 평상시 월평균의 몇 배 이상이어야 '튐'
+
+def _cluster_key(name: str) -> str:
+    return name[:15].strip()
+
+def _cluster_baseline_monthly(bills) -> dict:
+    """법안군(법안명 앞 15자)별 평상시 월평균 발의 건수.
+    직전 12개월 [TODAY-395 ~ MONTH_AGO) 구간에서 bill_id 중복 제거 후 집계 → 개월수로 나눔.
+    최근 30일(핫 윈도)은 제외해 '평상시' 기준선으로만 쓴다."""
+    base_lo = str(TODAY - timedelta(days=CLUSTER_BASELINE_DAYS + 30))
+    base_hi = str(MONTH_AGO)
+    seen_id = set()
+    counts = defaultdict(int)
+    for b in bills:
+        pd = b.get("propose_dt", "")
+        if not (base_lo <= pd < base_hi):
+            continue
+        if b["ksic_code"][:3] in EXCLUDE_KSIC_PREFIX:
+            continue
+        bid = b.get("bill_id")
+        if bid in seen_id:
+            continue
+        seen_id.add(bid)
+        counts[_cluster_key(b["bill_name"])] += 1
+    months = CLUSTER_BASELINE_DAYS / 30.0
+    return {k: v / months for k, v in counts.items()}
+
 def trigger_cluster(bills):
     # 691 등 catch-all 제외 + 최근 30일
     recent = [
@@ -723,10 +754,17 @@ def trigger_cluster(bills):
     # 법안명 앞 15자 기준 클러스터링
     cluster = defaultdict(list)
     for b in deduped:
-        key = b["bill_name"][:15].strip()
-        cluster[key].append(b)
+        cluster[_cluster_key(b["bill_name"])].append(b)
 
-    hits = {k: v for k, v in cluster.items() if len(v) >= 3}
+    # 평상시 월평균 대비 튄 것만 남긴다(baseline). 조용하던 법이 갑자기 3건+ =
+    # base 0 → 통과. 상시 다발 법은 3건 넘어도 평상시 수준이면 탈락.
+    baseline = _cluster_baseline_monthly(bills)
+    hits = {}
+    for k, v in cluster.items():
+        if len(v) < 3:
+            continue
+        if len(v) >= baseline.get(k, 0.0) * CLUSTER_SPIKE_FACTOR:
+            hits[k] = v
     # 건수 많은 순 정렬
     return dict(sorted(hits.items(), key=lambda x: len(x[1]), reverse=True))
 
@@ -901,11 +939,13 @@ def print_weekly_brief(bills):
     # B. 집중 발의 클러스터
     if clusters:
         article_count += 1
+        baseline = _cluster_baseline_monthly(bills)
         print(f"\n[●] [즉시 기사감 B] 동일 이슈 집중 발의 클러스터 ({len(clusters)}개)")
-        print(f"   기사 각도: '국회가 ○○산업을 겨냥했다'")
+        print(f"   기사 각도: '국회가 ○○산업을 겨냥했다' (평상시 월평균 대비 튄 것만)")
         for key, group in list(clusters.items())[:5]:
             ind = industry_name(group[0]["ksic_code"])
-            print(f"  [{ind}] '{key}…' 관련 {len(group)}건")
+            base = baseline.get(key, 0.0)
+            print(f"  [{ind}] '{key}…' 관련 {len(group)}건 (평상시 월 {base:.1f}건)")
             for b in group[:2]:
                 print(f"      - {b['bill_name'][:50]} ({b['propose_dt']})")
     else:
