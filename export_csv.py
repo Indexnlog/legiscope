@@ -26,6 +26,9 @@ def fetch_all_bills(db) -> list[dict]:
                 "proc_result_cd, committee_result, proc_dt, "
                 "regulation_type, ksic_codes, link_url"
             )
+            # 정렬 고정 필수: ORDER BY 없이 range 페이징하면 페이지 경계에서
+            # 행이 무작위로 누락/중복돼 CSV에 법안이 통째로 빠진다(자본시장법 등).
+            .order("bill_id")
             .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
             .execute()
             .data
