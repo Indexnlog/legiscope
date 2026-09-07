@@ -113,6 +113,10 @@ def run():
 
     log(f"\n=== 완료 ({ok_count}/{len(STEPS)}단계 성공) → 로그: {log_path} ===")
 
+    # 2026-09-07: 수집 스텝이 실패해도 잡이 초록으로 끝나 GitHub Actions에서 7월부터 수집 0건인 채
+    # "success"로 보이던 문제 → 한 스텝이라도 실패하면 비정상 종료로 표시
+    return ok_count == len(STEPS)
+
 
 if __name__ == "__main__":
-    run()
+    sys.exit(0 if run() else 1)
