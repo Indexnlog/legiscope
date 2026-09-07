@@ -1,10 +1,11 @@
 name: Legiscope Weekly Pipeline
 
 on:
-  # 매주 월요일 09:00 KST = 일요일 00:00 UTC
-  schedule:
-    - cron: "0 0 * * 1"
-  # 수동 트리거
+  # 2026-09-07: 정기 실행 해제. GitHub 호스티드 러너(해외 IP)에서 open.assembly.go.kr / www.law.go.kr 접속이
+  # 차단돼(ConnectTimeoutError) 7/13 이관 이후 수집 0건이었음. 정기 수집은 로컬 Windows 작업 스케줄러
+  # LegiscopeWeekly(월 09:00)가 담당. 이 워크플로는 수동 점검용으로만 유지.
+  # schedule:
+  #   - cron: "0 0 * * 1"
   workflow_dispatch:
 
 jobs:

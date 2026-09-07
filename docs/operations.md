@@ -7,6 +7,9 @@
 | **일간 브리프** | `LegiscopeDaily` | ~~매일 09:00~~ **Disabled** (2026-06-16 옵션 A) | — | `run_daily.bat` | 단신 알람이 메타·트렌드 워크플로우에 안 맞아 비활성화 |
 | **주간 파이프라인** | `LegiscopeWeekly` | 매주 **월요일** (2026-06-16 금→월 변경) | 09:00 | `run_weekly.bat` → `run_weekly.py` | 전체 수집 → 태깅 → 기사 브리프 |
 
+> **실행 환경 결정 (2026-09-07)**: 정기 수집은 **로컬 Windows 작업 스케줄러 `LegiscopeWeekly`가 유일한 경로**다. GitHub Actions(`weekly.yml`)는 해외 러너 IP에서 국회·법제처 API 접속이 차단돼(ConnectTimeoutError from page 1) 7/13 이관 이후 실제 수집이 0건이었음이 확인돼 cron을 해제하고 `workflow_dispatch` 수동 점검용으로만 남겼다. 아이맥은 개인 장비라 self-hosted runner 후보에서 제외.
+> 작업 설정(9/7 변경): 놓친 실행은 PC 켜지면 즉시 실행(StartWhenAvailable), 절전 해제 실행(WakeToRun), 배터리에서도 실행, 실행 제한 2시간. 로그온 타입은 Interactive라 **사용자가 로그인돼 있어야** 돈다.
+
 > ⚠️ **주 1회 실행의 함정 (2026-06~07 사고)**: 실행이 개인 PC Task Scheduler라 PC 꺼짐/절전 시 누락되고, 누락 1회면 Supabase free-tier 무활동 pause로 직결된다(6/12→6/29 공백 → 6/21~23 pause → 수집 3.5주 구멍). 현재는 news-epoch 레포 heartbeat(하루 3회)가 pause를 막는 임시 구조. 근본 해법은 pitchdeck-lab 이관(7/10 제안 예정).
 
 ### 작업 스케줄러 관리
