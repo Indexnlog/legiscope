@@ -24,10 +24,14 @@ HEADERS = {
 }
 
 
-def fetch_promulgations(page: int = 1, display: int = 100) -> list[dict]:
+def fetch_promulgations(page: int = 1, display: int = 100, anc_range: str | None = None) -> list[dict]:
     """
     공포 법령 목록 조회
     target=law: 대한민국 현행법령 (open.law.go.kr에서 신청 승인된 항목)
+    anc_range: 공포일자 범위 'YYYYMMDD~YYYYMMDD' (DRF ancYd). None이면 전체(법령명순).
+
+    2026-09-07: 매주 1페이지부터 전량 재수집하다 27페이지(2,600건)에서 law.go.kr가 연결을 끊어
+    최근 공포분이 아예 안 들어오던 문제 → 공포일자 범위 + 최신순(sort=ddes)으로 증분 수집.
     """
     if not LAW_OC:
         raise RuntimeError("LAW_OC가 설정되지 않았습니다. .env에 LAW_OC=이메일ID 추가 후 실행하세요.")
@@ -40,12 +44,21 @@ def fetch_promulgations(page: int = 1, display: int = 100) -> list[dict]:
         "page":    page,
         "display": display,
     }
+    if anc_range:
+        params["ancYd"] = anc_range
+        params["sort"] = "ddes"   # 공포일자 내림차순
 
-    try:
-        resp = requests.get(DRF_URL, params=params, headers=HEADERS, timeout=15)
-        resp.raise_for_status()
-    except requests.RequestException as e:
-        print(f"  [오류] page {page}: {e}")
+    resp = None
+    for attempt in range(3):
+        try:
+            resp = requests.get(DRF_URL, params=params, headers=HEADERS, timeout=30)
+            resp.raise_for_status()
+            break
+        except requests.RequestException as e:
+            print(f"  [재시도 {attempt + 1}/3] page {page}: {e}")
+            time.sleep(5 * (attempt + 1))
+    if resp is None:
+        print(f"  [오류] page {page}: 3회 실패, 중단")
         return []
 
     try:
@@ -229,17 +242,24 @@ if __name__ == "__main__":
         print("  3. .env 파일에 추가: LAW_OC=이메일ID앞부분")
         sys.exit(1)
 
-    print(f"공포 법령 수집 시작 (OC: {LAW_OC})...")
+    import os
+    from datetime import date, timedelta
 
-    total_count = get_total_count()
-    print(f"전체 건수: {total_count}건")
+    # 증분 창: --full 이면 전체, 아니면 PROMUL_SINCE(YYYYMMDD) 또는 최근 45일
+    if "--full" in sys.argv:
+        anc_range = None
+    else:
+        since = os.environ.get("PROMUL_SINCE") or (date.today() - timedelta(days=45)).strftime("%Y%m%d")
+        anc_range = f"{since}~{date.today().strftime('%Y%m%d')}"
+
+    print(f"공포 법령 수집 시작 (OC: {LAW_OC}, 공포일자 범위: {anc_range or '전체'})...")
 
     total = 0
     page = 1
     display = 100
 
     while True:
-        rows = fetch_promulgations(page=page, display=display)
+        rows = fetch_promulgations(page=page, display=display, anc_range=anc_range)
         if not rows:
             print(f"  → page {page}: 데이터 없음, 종료")
             break
@@ -248,7 +268,7 @@ if __name__ == "__main__":
         total += saved
         print(f"  page {page}: {saved}건 저장 | 누적: {total}건")
         page += 1
-        time.sleep(0.3)
+        time.sleep(1.0)   # law.go.kr 연속 호출 차단 방지
 
     print(f"\n공포법령 저장 완료: {total}건")
 

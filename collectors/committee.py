@@ -7,7 +7,7 @@ committee_result, committee_dt, proc_dt 를 가져와 bills 테이블 업데이�
 import time
 import requests
 from config import ASSEMBLY_KEY
-from db.client import get_client
+from db.client import get_client, upsert_chunked
 
 BASE_URL = "https://open.assembly.go.kr/portal/openapi/nzmimeepazxkubdpn"
 
@@ -22,9 +22,18 @@ def fetch_bill_detail(page: int = 1, page_size: int = 100, age: int = 22) -> lis
         "AGE": age,
     }
 
-    resp = requests.get(BASE_URL, params=params, timeout=15)
-    resp.raise_for_status()
-    data = resp.json()
+    data = None
+    for attempt in range(3):
+        try:
+            resp = requests.get(BASE_URL, params=params, timeout=60)
+            resp.raise_for_status()
+            data = resp.json()
+            break
+        except (requests.RequestException, ValueError) as e:
+            print(f"  [재시도 {attempt + 1}/3] page {page}: {e}")
+            time.sleep(3 * (attempt + 1))
+    if data is None:
+        return []
 
     try:
         rows = data["nzmimeepazxkubdpn"][1]["row"]
@@ -49,11 +58,10 @@ def update_committee_info(rows: list[dict]) -> int:
     if not rows:
         return 0
 
-    db = get_client()
     # bill_id 없는 행 제거
     valid = [r for r in rows if r.get("bill_id")]
     if valid:
-        db.table("bills").upsert(valid, on_conflict="bill_id").execute()
+        upsert_chunked("bills", valid, on_conflict="bill_id")
     return len(valid)
 
 
@@ -85,7 +93,8 @@ if __name__ == "__main__":
         page = 1
 
         while True:
-            rows = fetch_bill_detail(page=page, page_size=100)
+            # 2026-09-07: pSize 100→1000 (API 최대). 193회→20회 호출로 10분 타임아웃 해소.
+            rows = fetch_bill_detail(page=page, page_size=1000)
             if not rows:
                 print(f"  → page {page}: 데이터 없음, 종료")
                 break
@@ -94,6 +103,6 @@ if __name__ == "__main__":
             total += updated
             print(f"page {page}: {updated}건 업데이트 | 누적: {total}건")
             page += 1
-            time.sleep(0.3)   # API 부하 방지
+            time.sleep(0.5)   # API 부하 방지
 
         print(f"\n완료: 총 {total}건 상임위 심사 데이터 업데이트")

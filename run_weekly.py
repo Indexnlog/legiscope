@@ -85,7 +85,7 @@ def run():
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                timeout=600,
+                timeout=900,
                 env={
                     **os.environ,
                     "PYTHONPATH": str(BASE),
@@ -105,7 +105,7 @@ def run():
                 log(f"  완료")
                 ok_count += 1
         except subprocess.TimeoutExpired:
-            log(f"  [타임아웃] 10분 초과")
+            log(f"  [타임아웃] 15분 초과")
         except Exception as e:
             log(f"  [예외] {e}")
 

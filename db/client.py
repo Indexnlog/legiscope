@@ -4,6 +4,27 @@ from config import SUPABASE_URL, SUPABASE_ANON_KEY
 _client: Client | None = None
 
 
+def upsert_chunked(table: str, rows: list[dict], on_conflict: str, chunk: int = 500, retries: int = 3) -> int:
+    """대량 upsert를 chunk 단위로 나누고 일시 오류(네트워크·statement timeout)는 재시도.
+    2026-09-07: pSize 1000 전환 후 1,000행 단일 upsert가 간헐 실패해 수집 스텝 전체가 죽던 문제 대응."""
+    import time as _t
+    db = get_client()
+    saved = 0
+    for i in range(0, len(rows), chunk):
+        part = rows[i:i + chunk]
+        for attempt in range(retries):
+            try:
+                db.table(table).upsert(part, on_conflict=on_conflict).execute()
+                saved += len(part)
+                break
+            except Exception as e:  # noqa: BLE001
+                if attempt == retries - 1:
+                    raise
+                print(f"  [재시도 {attempt + 1}/{retries}] {table} upsert {i}-{i + len(part)}: {type(e).__name__}: {str(e)[:120]}")
+                _t.sleep(3 * (attempt + 1))
+    return saved
+
+
 def get_client() -> Client:
     global _client
     if _client is None:
