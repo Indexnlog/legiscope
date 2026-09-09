@@ -76,6 +76,9 @@ def enrich_bills(limit: int = 200, bill_ids: list[str] | None = None):
             print(f"저장 ({len(reason)}자)")
             success += 1
         else:
+            # 2026-09-08: 본문 없는 법안은 빈 문자열로 표시해 다음 라운드에서 재시도하지 않음
+            # (NULL만 대상으로 잡으므로 '' 는 제외됨). 원문 등록 후 재수집은 --retry-empty 로.
+            db.table("bills").update({"proposal_reason": ""}).eq("bill_id", bid).execute()
             print("내용 없음")
             fail += 1
 

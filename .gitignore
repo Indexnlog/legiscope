@@ -11,3 +11,6 @@ data/raw/
 output/
 debug_*.txt
 *.bak
+
+# Research notebooks/outputs — reference internal pdeck DB objects; kept local, never pushed (public repo)
+research/
