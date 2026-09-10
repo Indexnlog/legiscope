@@ -6,6 +6,7 @@ pal.assembly.go.kr에서 제안이유+주요내용을 스크래핑해 bills.prop
   PYTHONPATH=. python collectors/bill_enricher.py            # 22대 미수집분만
   PYTHONPATH=. python collectors/bill_enricher.py --limit 50 # 최대 50건만
   PYTHONPATH=. python collectors/bill_enricher.py --test     # 약사법 9건으로 테스트
+  PYTHONPATH=. python collectors/bill_enricher.py --ids-file ids.txt  # 지정 bill_id 재수집 (줄당 1개)
 """
 import argparse
 import time
@@ -34,7 +35,8 @@ def fetch_proposal_reason(bill_id: str) -> str | None:
         # 연속 공백/줄바꿈 정리
         text = re.sub(r"\n{3,}", "\n\n", text)
         text = re.sub(r"[ \t]+", " ", text)
-        return text[:3000] if text else None  # 최대 3000자
+        # 2026-09-10: 3,000자 상한 제거 — 제정법·다항목 개정안 62건이 잘려 판정 근거가 누락됐음
+        return text if text else None
 
     except Exception as e:
         print(f"  [WARN] {bill_id} 스크래핑 실패: {e}")
@@ -92,9 +94,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=200, help="최대 처리 건수")
     parser.add_argument("--test", action="store_true", help="약사법 9건으로 테스트")
+    parser.add_argument("--ids-file", help="재수집할 bill_id 목록 파일 (줄당 1개)")
     args = parser.parse_args()
 
-    if args.test:
+    if args.ids_file:
+        ids = [l.strip() for l in open(args.ids_file, encoding="utf-8") if l.strip()]
+        print(f"재수집 대상: {len(ids)}건 (--ids-file)")
+        enrich_bills(bill_ids=ids)
+    elif args.test:
         db = get_client()
         rows = (
             db.table("bills")
