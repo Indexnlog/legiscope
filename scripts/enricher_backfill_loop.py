@@ -18,7 +18,15 @@ while _wmic():
     time.sleep(30)
 from db.client import get_client
 for i in range(15):
-    n = get_client().table("bills").select("bill_id", count="exact", head=True).is_("proposal_reason", "null").eq("age", "22").execute().count
+    n = None
+    for attempt in range(3):  # 2026-09-10: Supabase가 라운드 사이 count에서 일시 500을 내 루프가 죽었음 → 재시도, 계속 실패하면 한 라운드 더 돈다
+        try:
+            n = get_client().table("bills").select("bill_id", count="exact", head=True).is_("proposal_reason", "null").eq("age", "22").execute().count
+            break
+        except Exception as e:
+            print(f"[round {i+1}] count 실패({attempt+1}/3): {str(e)[:80]}", flush=True); time.sleep(20)
+    if n is None:
+        n = 1
     print(f"[round {i+1}] remaining {n}", flush=True)
     if n == 0:
         break
