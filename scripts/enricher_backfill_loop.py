@@ -7,8 +7,13 @@ def enricher_running():
     out = subprocess.run(["tasklist", "/v", "/fo", "csv"], capture_output=True, text=True).stdout
     return "bill_enricher" in out or _wmic()
 def _wmic():
-    out = subprocess.run(["wmic", "process", "where", "name like 'python%'", "get", "CommandLine"], capture_output=True, text=True).stdout
-    return "bill_enricher" in out
+    # 2026-09-10: wmic은 Windows 11에서 제거됨(FileNotFoundError로 루프가 시작도 못 했음) → CIM으로 대체
+    cmd = "Get-CimInstance Win32_Process -Filter \"name like 'python%'\" | Select-Object -ExpandProperty CommandLine"
+    try:
+        out = subprocess.run(["powershell", "-NoProfile", "-Command", cmd], capture_output=True, text=True, timeout=30).stdout
+    except Exception:
+        return False
+    return "bill_enricher" in (out or "")
 while _wmic():
     time.sleep(30)
 from db.client import get_client
